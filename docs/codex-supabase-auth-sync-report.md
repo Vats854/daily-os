@@ -64,3 +64,4 @@ Not completed in Codex: local dev server startup required sandbox escalation, bu
 - State sync is document-level, not normalized table persistence yet.
 - Conflict resolution is simple: on sign-in, remote state wins if it exists.
 - Supabase JS is loaded from CDN for now; production can later vendor or bundle it.
+- The deployed app shell is public unless an auth wall is added. Supabase RLS protects saved state per authenticated user, but the unauthenticated demo UI can still be opened by anyone with the URL.
