@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Daily OS — Design Direction Lab</title>
+  <style>
+    :root {
+      --ink: #171717;
+      --muted: #6f7280;
+      --line: #e7e9ef;
+      --blue: #2563eb;
+      --green: #56ff18;
+      --soft-blue: #f1f7ff;
+      --paper: #fbfcfe;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #fff; }
+    .page { padding: 28px; display: grid; gap: 30px; }
+    .intro { max-width: 980px; }
+    .intro h1 { margin: 0; font-size: clamp(34px, 5vw, 72px); letter-spacing: -.075em; line-height: .95; }
+    .intro p { max-width: 720px; margin: 14px 0 0; color: var(--muted); font-size: 16px; line-height: 1.55; }
+    .direction { border: 1px solid var(--line); border-radius: 28px; overflow: hidden; background: #fff; }
+    .direction-head { display: flex; justify-content: space-between; gap: 20px; padding: 18px 22px; border-bottom: 1px solid var(--line); background: #fafbfc; }
+    .direction-head h2 { margin: 0; font-size: 18px; letter-spacing: -.03em; }
+    .direction-head span { color: var(--muted); font-size: 13px; }
+    .frame { min-height: 620px; }
+    button { font: inherit; }
+    .pill { display: inline-flex; align-items: center; min-height: 24px; padding: 4px 9px; border-radius: 999px; background: #f4f6f9; color: #4b5563; font-size: 12px; font-weight: 700; }
+
+    /* A: Open Design inspired */
+    .open-shell { position: relative; min-height: 620px; padding: 22px 24px; background: #fff; overflow: hidden; }
+    .open-shell::before { content: ""; position: absolute; inset: 78px 0 auto; height: 300px; background:
+      linear-gradient(90deg, rgba(0,0,0,.035) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(0,0,0,.035) 1px, transparent 1px); background-size: 42px 42px; transform: rotate(-5deg) scale(1.05); opacity: .65; }
+    .open-nav { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+    .open-logo { display: flex; align-items: center; gap: 8px; font-weight: 800; }
+    .open-logo-mark { width: 28px; height: 28px; border-radius: 9px; background: #222; }
+    .open-menu { display: flex; gap: 20px; color: #343434; }
+    .open-hero { position: relative; z-index: 1; max-width: 760px; margin: 62px auto 34px; text-align: center; }
+    .open-hero small { color: var(--muted); }
+    .open-hero h3 { margin: 14px 0 18px; font-family: Georgia, 'Times New Roman', serif; font-size: 58px; line-height: .95; letter-spacing: -.055em; }
+    .open-hero h3 b { color: var(--green); font-family: inherit; }
+    .open-actions { display: flex; justify-content: center; gap: 10px; }
+    .black-btn { border: 0; border-radius: 999px; background: #242424; color: #fff; min-height: 38px; padding: 0 16px; font-size: 12px; font-weight: 700; }
+    .white-btn { border: 1px solid var(--line); border-radius: 999px; background: #fff; min-height: 38px; padding: 0 16px; font-size: 12px; font-weight: 700; }
+    .open-workbench { position: relative; z-index: 1; max-width: 980px; margin: 44px auto 0; display: grid; grid-template-columns: 1.15fr .85fr; gap: 16px; }
+    .open-card { border: 1px solid var(--line); border-radius: 22px; background: rgba(255,255,255,.9); box-shadow: 0 24px 60px rgba(10,20,40,.07); padding: 18px; }
+    .open-timeline { display: grid; gap: 10px; margin-top: 12px; }
+    .open-row { display: grid; grid-template-columns: 82px 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid #eef0f4; }
+    .open-row:last-child { border-bottom: 0; }
+    .open-time { color: #1d4ed8; font-weight: 800; }
+    .open-row strong { display: block; letter-spacing: -.02em; }
+    .open-row small { color: var(--muted); }
+    .quest { display: grid; gap: 10px; }
+    .quest h4 { margin: 0; font-size: 22px; letter-spacing: -.04em; }
+    .road { display: flex; gap: 5px; margin: 12px 0 16px; }
+    .road span { flex: 1; height: 9px; border-radius: 999px; background: #eef1f5; }
+    .road .done { background: #171717; }
+    .road .now { background: var(--green); box-shadow: 0 0 0 4px rgba(86,255,24,.15); }
+
+    /* B: Calm product tracker */
+    .tracker-shell { min-height: 620px; display: grid; grid-template-columns: 230px 1fr; background: #f7f9fc; }
+    .tracker-side { padding: 18px 14px; border-right: 1px solid var(--line); background: #fff; }
+    .tracker-brand { font-weight: 850; letter-spacing: -.04em; margin-bottom: 28px; }
+    .tracker-nav { display: grid; gap: 4px; }
+    .tracker-nav div { min-height: 36px; padding: 9px 11px; border-radius: 10px; color: #566174; font-size: 13px; font-weight: 650; }
+    .tracker-nav .active { background: #eaf3ff; color: #1d4ed8; }
+    .tracker-main { padding: 28px 34px; }
+    .tracker-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .tracker-top h3 { margin: 0; font-size: 34px; letter-spacing: -.06em; }
+    .tracker-top p { margin: 7px 0 0; color: var(--muted); }
+    .focus-strip { display: flex; justify-content: space-between; gap: 16px; padding: 18px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-bottom: 20px; }
+    .focus-strip strong { font-size: 24px; letter-spacing: -.045em; }
+    .task-table { border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: #fff; }
+    .task-head, .task-line { display: grid; grid-template-columns: 100px 1fr 120px 90px; gap: 14px; align-items: center; }
+    .task-head { padding: 12px 16px; background: #fbfcfe; color: #9aa3b2; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+    .task-line { min-height: 64px; padding: 12px 16px; border-top: 1px solid #eef1f5; }
+    .task-line strong { display: block; }
+    .task-line small { color: var(--muted); }
+    .assistant-note { margin-top: 16px; border: 1px solid #dbe7ff; background: #f4f8ff; border-radius: 18px; padding: 16px; }
+
+    /* C: Journey workspace */
+    .journey-shell { min-height: 620px; padding: 26px; background: linear-gradient(180deg, #fff 0%, #f8fbff 100%); }
+    .journey-grid { display: grid; grid-template-columns: 310px 1fr; gap: 22px; height: 100%; }
+    .journey-list { border-right: 1px solid var(--line); padding-right: 18px; }
+    .journey-title { margin: 0 0 18px; font-size: 34px; letter-spacing: -.065em; line-height: 1; }
+    .project-row { padding: 14px 0; border-bottom: 1px solid var(--line); }
+    .project-row strong { display: block; }
+    .project-row small { color: var(--muted); }
+    .project-row.active strong { color: #1d4ed8; }
+    .chapter { padding: 8px 0 0; }
+    .chapter-kicker { color: #1d4ed8; font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+    .chapter h3 { margin: 10px 0 10px; max-width: 700px; font-size: 58px; line-height: .96; letter-spacing: -.075em; }
+    .chapter p { max-width: 700px; color: var(--muted); line-height: 1.55; }
+    .map { margin: 30px 0; display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+    .map-step { min-height: 88px; padding: 10px; border: 1px solid var(--line); border-radius: 18px; background: #fff; }
+    .map-step.done { background: #111827; color: #fff; border-color: #111827; }
+    .map-step.now { background: #ecffdf; border-color: #7cff3a; box-shadow: 0 0 0 4px rgba(86,255,24,.18); }
+    .map-step small { display: block; opacity: .65; margin-bottom: 8px; }
+    .quest-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .quest-card { border: 1px solid var(--line); border-radius: 20px; background: #fff; padding: 18px; }
+    .quest-card h4 { margin: 0 0 12px; font-size: 18px; letter-spacing: -.035em; }
+    .quest-card ul { margin: 0; padding-left: 18px; color: var(--muted); line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="intro">
+      <h1>Daily OS: три свежих направления</h1>
+      <p>Это не рабочий app и не CSS-патч. Это визуальная лаборатория: выбираем глобальный язык продукта — от Open Design / Lovable до спокойного task tracker и отдельного пространства пути героя.</p>
+    </section>
+
+    <section class="direction">
+      <div class="direction-head">
+        <div><h2>A. Open Design / Lovable workbench</h2><span>Большой воздух, editorial hero, лёгкая “design-tool” атмосфера, акцент на фокусе и текущем плане.</span></div>
+        <span class="pill">fresh / visual</span>
+      </div>
+      <div class="frame open-shell">
+        <div class="open-nav"><div class="open-logo"><span class="open-logo-mark"></span>Daily OS</div><div class="open-menu"><span>Сегодня</span><span>Проекты</span><span>Путь</span><span>Лог</span></div><button class="black-btn">Проверить план</button></div>
+        <div class="open-hero"><small>Операционная система дня · 2 июля</small><h3>Собрать день,<br><b>не распыляясь</b></h3><div class="open-actions"><button class="black-btn">Начать текущий блок</button><button class="white-btn">Разобрать inbox</button></div></div>
+        <div class="open-workbench">
+          <div class="open-card"><span class="pill">Временные блоки</span><div class="open-timeline"><div class="open-row"><span class="open-time">10:00</span><div><strong>Поиск работы</strong><small>3 отклика до вечерней усталости</small></div><span class="pill">must</span></div><div class="open-row"><span class="open-time">13:30</span><div><strong>Восстановление</strong><small>еда, прогулка, один источник в дороге</small></div><span class="pill">ok</span></div><div class="open-row"><span class="open-time">16:00</span><div><strong>Обучение</strong><small>математика или vibe coding, не всё сразу</small></div><span class="pill">choose</span></div></div></div>
+          <div class="open-card quest"><span class="pill">Путь проекта</span><h4>Глава: Испытание</h4><p style="color:var(--muted);line-height:1.5">Проект “Поиск работы” проверяется реальными откликами и собеседованиями.</p><div class="road"><span class="done"></span><span class="done"></span><span class="done"></span><span class="now"></span><span></span><span></span><span></span></div><button class="white-btn">Показать квест этапа</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="direction">
+      <div class="direction-head"><div><h2>B. Clean task tracker</h2><span>Ближе к Weeek / Linear: меньше wow, больше повседневной ясности. Хорошо для реального использования каждый день.</span></div><span class="pill">practical</span></div>
+      <div class="frame tracker-shell"><aside class="tracker-side"><div class="tracker-brand">Daily OS</div><nav class="tracker-nav"><div class="active">Сегодня</div><div>Inbox</div><div>Неделя</div><div>Проекты</div><div>Путь героя</div><div>Лог ИИ</div></nav></aside><section class="tracker-main"><div class="tracker-top"><div><h3>Сегодня</h3><p>Принятый план, временные блоки и действия ассистента.</p></div><button class="black-btn">Проверить</button></div><div class="focus-strip"><div><span class="pill">Фокус</span><br><strong>3 отклика + один учебный блок</strong></div><span class="pill">энергия 6–7</span></div><div class="task-table"><div class="task-head"><span>Время</span><span>Блок</span><span>Источник</span><span>Статус</span></div><div class="task-line"><span>10:00–12:00</span><div><strong>Отклики</strong><small>найти, адаптировать, отправить</small></div><span>hh / LinkedIn</span><span class="pill">must</span></div><div class="task-line"><span>15:00–16:00</span><div><strong>Резюме</strong><small>поле “О себе” под эффективность</small></div><span>HH</span><span class="pill">focus</span></div><div class="task-line"><span>17:00–17:45</span><div><strong>Обучение</strong><small>один урок + конспект</small></div><span>Практикум</span><span class="pill">soft</span></div></div><div class="assistant-note"><strong>ИИ-ревью:</strong> отклики нельзя ставить на поздний вечер; обучение сегодня только одно, иначе расползётся.</div></section></div>
+    </section>
+
+    <section class="direction">
+      <div class="direction-head"><div><h2>C. Journey workspace</h2><span>Геймификация не всего дня, а больших фокусов: работа, Daily OS, спорт. Путь героя становится главным экраном проектов.</span></div><span class="pill">gamified / projects</span></div>
+      <div class="frame journey-shell"><div class="journey-grid"><aside class="journey-list"><h3 class="journey-title">Большие фокусы</h3><div class="project-row active"><strong>Поиск работы</strong><small>Испытание · главный проект</small></div><div class="project-row"><strong>Daily OS</strong><small>Подготовка · продуктовый прототип</small></div><div class="project-row"><strong>BJJ / здоровье</strong><small>Пауза · восстановление</small></div></aside><section class="chapter"><div class="chapter-kicker">Текущая глава</div><h3>Испытание рынка</h3><p>Ты не выбираешь новую профессию — ты проверяешь, как твой опыт эффективности, ФОТ, C&B и операционной аналитики читается рынком.</p><div class="map"><div class="map-step done"><small>01</small>Замысел</div><div class="map-step done"><small>02</small>Решение</div><div class="map-step done"><small>03</small>Подготовка</div><div class="map-step now"><small>04</small>Испытание</div><div class="map-step"><small>05</small>Узкое место</div><div class="map-step"><small>06</small>Результат</div><div class="map-step"><small>07</small>Интеграция</div></div><div class="quest-panel"><div class="quest-card"><h4>Квест этапа</h4><ul><li>3 качественных отклика сегодня</li><li>1 адаптация “О себе”</li><li>зафиксировать реакцию рынка</li></ul></div><div class="quest-card"><h4>Условие перехода</h4><ul><li>есть интервью → “Результат”</li><li>нет откликов → “Узкое место”</li><li>много хаоса → сузить позиционирование</li></ul></div></div></section></div></div>
+    </section>
+  </main>
+</body>
+</html>

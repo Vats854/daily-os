@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Daily OS v3 — Operational Planner</title>
+  <style>
+    :root {
+      --bg: #f5f8fc;
+      --surface: #ffffff;
+      --surface-soft: #f8fbff;
+      --ink: #111827;
+      --muted: #64748b;
+      --faint: #94a3b8;
+      --line: #dbe5ef;
+      --line-soft: #edf2f7;
+      --blue: #2563eb;
+      --blue-soft: #edf5ff;
+      --green: #059669;
+      --green-soft: #ecfdf5;
+      --amber: #b7791f;
+      --amber-soft: #fff7ed;
+      --red: #dc2626;
+      --red-soft: #fff1f2;
+      --radius: 14px;
+      --shadow: 0 18px 50px rgba(15, 23, 42, .06);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 4% -6%, rgba(37, 99, 235, .12), transparent 30%),
+        radial-gradient(circle at 92% -8%, rgba(14, 165, 233, .11), transparent 28%),
+        var(--bg);
+      font-size: 14px;
+    }
+    button, input, textarea { font: inherit; }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 236px minmax(0, 1fr) 336px;
+    }
+
+    .sidebar {
+      padding: 18px 14px;
+      border-right: 1px solid var(--line);
+      background: rgba(255,255,255,.72);
+      backdrop-filter: blur(14px);
+    }
+    .brand { display:flex; align-items:center; gap:10px; padding: 4px 8px 20px; font-weight: 780; letter-spacing:-.035em; }
+    .logo { width:32px; height:32px; border-radius:10px; background:linear-gradient(135deg,#2563eb,#38bdf8); box-shadow:0 10px 24px rgba(37,99,235,.22); }
+    .nav-label { padding: 14px 10px 7px; color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 760; }
+    .nav-item { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:34px; padding:8px 10px; color:#475569; border-radius:10px; }
+    .nav-item.active { background: var(--blue-soft); color:#1d4ed8; font-weight:760; }
+    .count { color: var(--faint); font-size:12px; font-weight:700; }
+    .project-mini { margin: 18px 8px 0; padding: 12px; border:1px solid var(--line); border-radius: 15px; background: rgba(255,255,255,.72); }
+    .project-mini strong { display:block; margin-bottom: 6px; }
+
+    .main { min-width: 0; padding: 24px; }
+    .topbar { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; margin-bottom: 18px; }
+    h1 { margin:0; font-size:30px; line-height:1.04; letter-spacing:-.055em; }
+    h2 { margin:0; font-size:16px; letter-spacing:-.025em; }
+    h3 { margin:0; font-size:14px; letter-spacing:-.015em; }
+    p { margin:0; }
+    .subline { margin-top: 7px; color: var(--muted); line-height:1.45; max-width:760px; }
+
+    .actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .btn { border:0; min-height:36px; padding:8px 12px; border-radius:11px; background:#111827; color:#fff; font-weight:740; }
+    .btn.secondary { background:#fff; color:#1e293b; border:1px solid var(--line); }
+    .btn.blue { background:#1d4ed8; }
+
+    .focus-card {
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      gap:16px;
+      align-items:center;
+      margin-bottom: 16px;
+      padding: 16px;
+      border:1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(135deg,#fff,#eef7ff);
+      box-shadow: var(--shadow);
+    }
+    .focus-title { margin:8px 0 4px; font-size:18px; font-weight:780; letter-spacing:-.025em; }
+    .muted { color: var(--muted); }
+    .small { font-size:12px; line-height:1.4; }
+    .pill { display:inline-flex; align-items:center; gap:6px; min-height:24px; padding:4px 8px; border-radius:999px; border:1px solid var(--line); background:#fff; color:#475569; font-size:12px; font-weight:700; white-space:nowrap; }
+    .pill.blue { color:#1d4ed8; background:var(--blue-soft); border-color:#bfdbfe; }
+    .pill.green { color:var(--green); background:var(--green-soft); border-color:#bbf7d0; }
+    .pill.amber { color:var(--amber); background:var(--amber-soft); border-color:#fed7aa; }
+    .pill.red { color:var(--red); background:var(--red-soft); border-color:#fecdd3; }
+
+    .layout { display:grid; gap:16px; }
+    .panel { border:1px solid var(--line); border-radius:18px; background:rgba(255,255,255,.9); box-shadow:var(--shadow); overflow:hidden; }
+    .panel-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:13px 15px; border-bottom:1px solid var(--line-soft); background:rgba(248,251,255,.82); }
+    .panel-body { padding: 8px 15px 12px; }
+
+    table { width:100%; border-collapse:collapse; }
+    th, td { padding: 11px 0; border-bottom:1px solid var(--line-soft); text-align:left; vertical-align:top; }
+    th { color:var(--faint); font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
+    tr:last-child td { border-bottom:0; }
+    .time { color:#64748b; font-weight:760; font-variant-numeric:tabular-nums; width:74px; }
+    .obj { font-weight:760; }
+    .note { color:var(--muted); font-size:12px; margin-top:3px; line-height:1.35; }
+
+    .two-col { display:grid; grid-template-columns: 1.1fr .9fr; gap:16px; }
+    .list { display:grid; gap:8px; padding: 14px 15px; }
+    .row-card { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:center; padding:11px 0; border-bottom:1px solid var(--line-soft); }
+    .row-card:last-child { border-bottom:0; }
+    .journey { display:flex; gap:4px; margin-top:8px; }
+    .stage { height:7px; flex:1; border-radius:999px; background:#e5edf6; }
+    .stage.done { background:#93c5fd; }
+    .stage.active { background:linear-gradient(90deg,#2563eb,#38bdf8); }
+
+    .inspector { padding: 24px 18px; border-left:1px solid var(--line); background:rgba(248,251,255,.78); overflow:auto; }
+    .inspector-card { padding: 14px; margin-bottom:12px; border:1px solid var(--line); border-radius:16px; background:#fff; box-shadow:0 10px 26px rgba(15,23,42,.04); }
+    .inspector-card h3 { margin:8px 0 6px; font-size:15px; }
+    .decision { display:grid; gap:8px; margin-top:10px; }
+    .decision button { width:100%; justify-content:flex-start; text-align:left; }
+
+    @media (max-width: 1180px) {
+      .app { grid-template-columns: 220px minmax(0, 1fr); }
+      .inspector { display:none; }
+    }
+    @media (max-width: 780px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { display:none; }
+      .main { padding:16px; }
+      .topbar, .focus-card, .two-col { display:grid; grid-template-columns:1fr; }
+      .actions .btn { width:100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand"><div class="logo"></div><span>Daily OS</span></div>
+      <div class="nav-label">Работа</div>
+      <div class="nav-item">Inbox <span class="count">8</span></div>
+      <div class="nav-item active">Сегодня <span class="count">5</span></div>
+      <div class="nav-item">Неделя <span class="count">12</span></div>
+      <div class="nav-item">Проекты <span class="count">4</span></div>
+      <div class="nav-item">Доска</div>
+      <div class="nav-item">Лог <span class="count">3</span></div>
+
+      <div class="nav-label">Фокусы</div>
+      <div class="nav-item">Работа <span class="count">trial</span></div>
+      <div class="nav-item">Здоровье <span class="count">rest</span></div>
+      <div class="nav-item">AI / code <span class="count">call</span></div>
+
+      <div class="project-mini small">
+        <strong>Правило интерфейса</strong>
+        Каждый блок должен помогать выбрать действие, подтвердить изменение или увидеть следующий шаг.
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <h1>Сегодня</h1>
+          <div class="subline">Операционный план дня: что уже принято, что требует решения, что ассистент предлагает изменить.</div>
+        </div>
+        <div class="actions">
+          <button class="btn secondary">Разобрать inbox</button>
+          <button class="btn blue">Проверить план</button>
+        </div>
+      </div>
+
+      <section class="focus-card">
+        <div>
+          <span class="pill blue">главный фокус</span>
+          <div class="focus-title">Поиск работы: 3 качественных отклика до вечерней усталости</div>
+          <p class="small muted">Критерий дня: не “занимался карьерой”, а выбрал вакансии, адаптировал верхний блок резюме и отправил отклики.</p>
+        </div>
+        <span class="pill amber">2 решения</span>
+      </section>
+
+      <div class="layout">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Временные блоки</h2>
+            <span class="small muted">редактируемый план</span>
+          </div>
+          <div class="panel-body">
+            <table>
+              <thead><tr><th>Время</th><th>Объект</th><th>Следующее действие</th><th>Статус</th></tr></thead>
+              <tbody>
+                <tr><td class="time">13:30</td><td><div class="obj">Еда + прогулка</div><div class="note">В дороге — один источник: книга или выбранное видео.</div></td><td>Не превращать восстановление в бесконечный скролл.</td><td><span class="pill green">ok</span></td></tr>
+                <tr><td class="time">16:00</td><td><div class="obj">Поиск работы</div><div class="note">Главный рабочий слот, не поздний вечер.</div></td><td>3 отклика: роль, почему подхожу, какую версию резюме использовать.</td><td><span class="pill blue">must</span></td></tr>
+                <tr><td class="time">18:00</td><td><div class="obj">Резюме</div><div class="note">Версия “эффективность”.</div></td><td>Проверить блок “О себе” и один отклик под него.</td><td><span class="pill">draft</span></td></tr>
+                <tr><td class="time">20:00</td><td><div class="obj">Обучение</div><div class="note">Только один трек за вечер.</div></td><td>Vibe coding Stage 1 или математика: 35 минут + 5 строк конспекта.</td><td><span class="pill amber">choose</span></td></tr>
+                <tr><td class="time">22:00</td><td><div class="obj">Review</div><div class="note">10 минут, без самобичевания.</div></td><td>Факт дня, что сработало, что переносим, что ассистент должен оспорить.</td><td><span class="pill">10 min</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <div class="two-col">
+          <section class="panel">
+            <div class="panel-head"><h2>Проекты</h2><span class="small muted">hero layer только здесь</span></div>
+            <div class="list">
+              <div class="row-card"><div><div class="obj">Найти работу</div><div class="note">Этап: Испытание · активный рынок</div><div class="journey"><div class="stage done"></div><div class="stage done"></div><div class="stage active"></div><div class="stage"></div><div class="stage"></div><div class="stage"></div><div class="stage"></div></div></div><span class="pill blue">main</span></div>
+              <div class="row-card"><div><div class="obj">Собрать Daily OS</div><div class="note">Этап: Подготовка · выбрать дизайн и механику</div><div class="journey"><div class="stage done"></div><div class="stage active"></div><div class="stage"></div><div class="stage"></div><div class="stage"></div><div class="stage"></div><div class="stage"></div></div></div><span class="pill">side</span></div>
+              <div class="row-card"><div><div class="obj">BJJ развитие</div><div class="note">Пауза до абонемента · не компенсировать хаотичным залом</div></div><span class="pill green">rest</span></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head"><h2>Проверка ассистента</h2><span class="small muted">не чат, а ревью решений</span></div>
+            <div class="list">
+              <div class="row-card"><div><div class="obj">Отклики поздно — риск</div><div class="note">Если это главный приоритет, ставим до вечернего проседания.</div></div><span class="pill amber">review</span></div>
+              <div class="row-card"><div><div class="obj">Обучение расползается</div><div class="note">Сегодня один источник. Остальное — backlog.</div></div><span class="pill amber">review</span></div>
+              <div class="row-card"><div><div class="obj">Геймификация</div><div class="note">Для больших проектов, не для каждой мелкой задачи.</div></div><span class="pill green">rule</span></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <aside class="inspector">
+      <div class="inspector-card">
+        <span class="pill blue">выбранный объект</span>
+        <h3>Поиск работы</h3>
+        <p class="small muted">Главный проект периода. Интерфейс должен помочь не “думать про работу”, а каждый день делать проверяемые действия: вакансия → адаптация → отклик → вывод.</p>
+      </div>
+      <div class="inspector-card">
+        <h3>Действия</h3>
+        <div class="decision">
+          <button class="btn secondary">Создать 3 отклика</button>
+          <button class="btn secondary">Записать вывод по вакансии</button>
+          <button class="btn secondary">Перенести обучение в backlog</button>
+        </div>
+      </div>
+      <div class="inspector-card">
+        <h3>Роль ИИ</h3>
+        <p class="small muted">ИИ не рисует “умный дашборд”. Он классифицирует входящие мысли, предлагает изменения, двигает задачи и оставляет след в логе. Спорные действия идут на подтверждение.</p>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

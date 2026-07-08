@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Career Tailor</title>
+    <link rel="stylesheet" href="/career/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="rail" aria-label="Навигация">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">ct</div>
+          <div>
+            <strong>Career Tailor</strong>
+            <span>resume lab</span>
+          </div>
+        </div>
+        <nav class="rail-nav">
+          <a class="active" href="/career/">Отклик</a>
+          <a href="/">Second Brain</a>
+        </nav>
+        <div class="rail-note">
+          <strong id="providerState">local</strong>
+          <span>Gemini/OpenAI включаются автоматически через локальный `.env`.</span>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Инструмент отклика</p>
+            <h1>Адаптация резюме под вакансию</h1>
+          </div>
+          <button class="ghost-button" id="clearButton" type="button" title="Очистить поля">Очистить</button>
+        </header>
+
+        <section class="tool-grid" aria-label="Рабочая область">
+          <form class="input-panel" id="careerForm">
+            <div class="field-head">
+              <div>
+                <label for="backgroundText">База фактов</label>
+                <p>Твоя история, навыки, сильные проекты, цифры, ограничения и спорные места.</p>
+              </div>
+              <span id="backgroundCount">0</span>
+            </div>
+            <textarea class="profile-textarea" id="backgroundText" name="backgroundText" spellcheck="true" placeholder="Например: 10+ направлений клиентского сервиса, команда 20-25, бюджет 200-300 млн ₽/мес, опыт Яндекс Маркет/Такси, сильные стороны: операционная эффективность, процессы, метрики, автоматизация..."></textarea>
+
+            <div class="field-head">
+              <div>
+                <label for="cvText">Резюме</label>
+                <p>Вставь текст резюме или черновик опыта.</p>
+              </div>
+              <span id="cvCount">0</span>
+            </div>
+            <textarea id="cvText" name="cvText" spellcheck="true" placeholder="Например: Product manager. Запускал CRM-коммуникации, SQL-аналитику, A/B тесты, улучшил конверсию на 12%..."></textarea>
+
+            <div class="field-head">
+              <div>
+                <label for="jobText">Вакансия</label>
+                <p>Описание роли, требования, задачи, стек, преимущества.</p>
+              </div>
+              <span id="jobCount">0</span>
+            </div>
+            <textarea id="jobText" name="jobText" spellcheck="true" placeholder="Например: Ищем product manager для CRM и retention. Нужны SQL, A/B tests, growth mindset..."></textarea>
+
+            <div class="field-head">
+              <div>
+                <label for="clarificationText">Ответы на уточнения</label>
+                <p>Коротко отвечай на вопросы из блока “Уточнить”: что было, чего не было, где нужна аккуратная формулировка.</p>
+              </div>
+              <span id="clarificationCount">0</span>
+            </div>
+            <textarea class="clarification-textarea" id="clarificationText" name="clarificationText" spellcheck="true" placeholder="Например: BPMN не использовал глубоко; автоматизацией занимался на уровне расчётов, отчётности и операционной логики, не как владелец разработки; AI-агентов в проде не внедрял..."></textarea>
+
+            <div class="action-row" aria-label="Действия">
+              <button type="button" data-action="resume-tailor" class="primary-button">Адаптировать</button>
+              <button type="button" data-action="resume-rewrite">Собрать резюме</button>
+              <button type="button" data-action="resume-match">Мэтч</button>
+              <button type="button" data-action="cv-check">Проверить</button>
+              <button type="button" data-action="cover-letter">Письмо</button>
+            </div>
+          </form>
+
+          <section class="result-panel" aria-live="polite">
+            <div class="result-head">
+              <div>
+                <p class="eyebrow">Результат</p>
+                <h2 id="resultTitle">Готов к работе</h2>
+              </div>
+              <span id="resultBadge">ожидание</span>
+            </div>
+            <div id="result" class="empty-state">
+              <strong>Вставь резюме и вакансию, затем нажми “Адаптировать”.</strong>
+              <p>Приложение покажет короткий вывод, конкретные правки и готовые формулировки в формате “в резюме” → “предлагаем”.</p>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="/career/app.js" type="module"></script>
+  </body>
+</html>

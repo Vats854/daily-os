@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>Second Brain</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/styles.css?v=67" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Навигация">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <div>
+            <strong>Second Brain</strong>
+            <span>Daily OS</span>
+          </div>
+        </div>
+        <nav class="nav-tabs" aria-label="Разделы">
+          <button class="nav-button" data-view="inbox" title="Inbox">
+            <span>↘</span>
+            Inbox
+          </button>
+          <button class="nav-button active" data-view="today" title="Сегодня">
+            <span>⌁</span>
+            Сегодня
+          </button>
+          <button class="nav-button" data-view="week" title="Неделя">
+            <span>◇</span>
+            Неделя
+          </button>
+          <button class="nav-button" data-view="projects" title="Проекты">
+            <span>◌</span>
+            Проекты
+          </button>
+          <button class="nav-button" data-view="board" title="Доска">
+            <span>☷</span>
+            Доска
+          </button>
+          <button class="nav-button" data-view="log" title="Лог">
+            <span>≡</span>
+            Лог
+          </button>
+        </nav>
+        <section class="status-stack" aria-label="Текущий объект">
+          <div>
+            <span class="muted">Mode</span>
+            <strong id="shellMode">object</strong>
+          </div>
+          <div>
+            <span class="muted">Review</span>
+            <strong id="reviewCount">0</strong>
+          </div>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="todayDate"></p>
+            <h1 id="viewTitle">Сегодня</h1>
+            <p class="page-subtitle">Фокус, ритуалы и операционка дня в одном спокойном месте.</p>
+          </div>
+          <div class="topbar-actions">
+            <span class="sync-status" id="authStatus">local</span>
+            <button class="secondary-button" id="authButton" type="button">GitHub вход</button>
+            <button class="secondary-button is-hidden" id="signOutButton" type="button">Выйти</button>
+            <button class="icon-button" id="resetDemo" title="Сбросить демо-данные">↺</button>
+            <button class="primary-button" id="runAutopilot">Проверить план</button>
+          </div>
+        </header>
+
+        <section class="view" id="inboxView" aria-labelledby="viewTitle">
+          <div class="inbox-layout">
+            <section class="panel">
+              <div class="panel-header">
+                <span class="label">AI Inbox</span>
+                <span class="pill" id="autonomyLabel">autonomous</span>
+              </div>
+              <form id="inboxForm" class="inbox-form">
+                <textarea id="inboxText" rows="5" placeholder="Мысль, задача, перенос, состояние, заметка"></textarea>
+                <button class="primary-button" type="submit">Разобрать</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <span class="label">Входящие</span>
+                <span class="pill">raw</span>
+              </div>
+              <div class="inbox-item-list" id="inboxItemList"></div>
+            </section>
+
+            <section class="panel inbox-operator-panel">
+              <div class="panel-header">
+                <span class="label">Оператор</span>
+                <span class="pill">review</span>
+              </div>
+              <div class="inbox-operator-note">
+                <strong>Что делать с входящими</strong>
+                <p>Ассистент должен не хранить сырой текст, а превратить его в задачу, заметку, проект или вопрос на подтверждение.</p>
+              </div>
+              <div class="assistant-feed action-list" id="assistantFeed"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view active" id="todayView" aria-labelledby="viewTitle">
+          <div class="today-workbench">
+            <section class="today-command-bar" aria-label="Фокус и состояние дня">
+              <div>
+                <div class="row-kicker">
+                  <span class="label">Фокус дня</span>
+                  <button class="text-button" id="editFocus" type="button">Изменить</button>
+                </div>
+                <h2 id="dailyFocus"></h2>
+              </div>
+              <div class="quick-states" id="quickStates"></div>
+            </section>
+
+            <section class="today-current-grid" aria-label="Текущий блок и быстрый inbox">
+              <article class="today-now-card" id="todayNowCard"></article>
+              <form class="today-capture-card" id="todayCaptureForm">
+                <div>
+                  <span class="label">Быстрый inbox</span>
+                  <p>Скинь мысль, задачу или перенос, не уходя с плана дня.</p>
+                </div>
+                <div class="today-capture-row">
+                  <textarea id="todayCaptureText" rows="2" placeholder="Например: перенести тренировку, записать идею, добавить задачу"></textarea>
+                  <button class="primary-button" type="submit">Разобрать</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="today-ritual-strip" aria-label="Ритуалы дня">
+              <div class="ritual-strip-head">
+                <span class="label">Ритуалы</span>
+                <strong id="ritualScore">0%</strong>
+              </div>
+              <div class="habit-list" id="habitList"></div>
+            </section>
+
+            <div class="day-plan-grid today-single-plan">
+              <main class="day-block-workbench" aria-label="Принятые блоки дня">
+                <div class="workbench-heading">
+                  <span class="label">Committed blocks</span>
+                  <span class="pill">plan-first</span>
+                </div>
+                <div class="day-block-list" id="dayBlockList"></div>
+                <section class="unscheduled-lane" aria-label="Задачи без блока">
+                  <div class="table-footer">
+                    <button class="ghost-row-button" id="addTask" type="button">+ Добавить задачу</button>
+                  </div>
+                  <div class="task-list tracker-list" id="todayTasks"></div>
+                </section>
+              </main>
+
+            </div>
+
+            <details class="evening-review-strip" id="todayReviewDrawer" aria-label="Вечерний review">
+              <summary class="review-strip-label">
+                <span class="label">Вечерний review</span>
+                <span class="pill" id="reviewState">draft</span>
+              </summary>
+              <form id="reviewForm" class="review-form">
+                <textarea id="reviewText" rows="2" placeholder="Что завершено, что перенести, энергия"></textarea>
+                <button class="primary-button" type="submit">Собрать итог</button>
+              </form>
+              <div class="review-summary" id="reviewSummary"></div>
+            </details>
+          </div>
+        </section>
+
+        <section class="view" id="weekView" aria-labelledby="viewTitle">
+          <div class="week-layout">
+            <section class="panel">
+              <div class="panel-header">
+                <span class="label">Фокусы недели</span>
+                <button class="icon-button" id="addWeeklyFocus" title="Добавить фокус">＋</button>
+              </div>
+              <p class="panel-help">1–3 ставки недели. Это не задачи, а направления, куда должна уходить энергия.</p>
+              <div class="weekly-focus-list" id="weeklyFocusList"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-header">
+                <span class="label">Задачи недели</span>
+                <span class="pill">this week</span>
+              </div>
+              <p class="panel-help">Конкретные действия, которые двигают недельные фокусы и могут перейти в Today.</p>
+              <div class="task-list compact week-task-list" id="weekTaskList"></div>
+            </section>
+            <section class="panel wide-panel">
+              <div class="panel-header">
+                <span class="label">Хвосты и переносы</span>
+                <button class="secondary-button" id="sweepBacklog">Разложить</button>
+              </div>
+              <p class="panel-help">Backlog: ещё не принято на неделю. Кнопка поднимает важное в “Задачи недели”.</p>
+              <div class="task-list compact" id="carryOverList"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="projectsView" aria-labelledby="viewTitle">
+          <div class="projects-layout">
+            <section class="panel project-list-panel">
+              <div class="panel-header">
+                <span class="label">Проекты</span>
+                <button class="secondary-button" id="reviewJourneys">Проверить</button>
+              </div>
+              <div class="journey-list" id="journeyList"></div>
+            </section>
+
+            <section class="panel project-detail-panel">
+              <div class="panel-header">
+                <span class="label">Карточка проекта</span>
+                <span class="pill" id="projectDetailState">selected</span>
+              </div>
+              <div class="project-detail" id="projectDetail"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="boardView" aria-labelledby="viewTitle">
+          <div class="board" id="taskBoard"></div>
+        </section>
+
+        <section class="view" id="logView" aria-labelledby="viewTitle">
+          <div class="log-layout">
+            <section class="panel">
+              <div class="panel-header">
+                <span class="label">Audit trail</span>
+                <span class="pill">assistant actions</span>
+              </div>
+              <div class="action-log-list" id="actionLogList"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+
+      <aside class="app-inspector" aria-label="Инспектор выбранного объекта">
+        <div class="inspector-shell-label">
+          <span class="label">Inspector</span>
+          <span class="pill" id="inspectorMode">selected object</span>
+        </div>
+        <div id="appInspectorContent"></div>
+      </aside>
+    </div>
+
+    <script src="/app.js?v=67" type="module"></script>
+  </body>
+</html>

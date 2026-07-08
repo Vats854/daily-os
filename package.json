@@ -1,0 +1,15 @@
+{
+  "name": "second-brain-command-center",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PWA-first second brain MVP for daily and weekly planning.",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "check": "node --check server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

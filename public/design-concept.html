@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Second Brain Design Direction</title>
+    <style>
+      /*
+        Design tokens
+        Product tone: editorial productivity tool, calm, focused, premium, restrained.
+      */
+      :root {
+        --bg: #f6f1e8;
+        --surface: #fffdf8;
+        --surface-muted: #eee8dc;
+        --text: #20201c;
+        --text-muted: #706d64;
+        --line: #ded6c8;
+        --line-strong: #c9bead;
+        --accent: #6f7f56;
+        --accent-strong: #4f603d;
+        --accent-soft: #e4ead7;
+        --amber: #b8873d;
+        --danger: #a05246;
+        --shadow: 0 1px 2px rgba(32, 32, 28, 0.05), 0 16px 40px rgba(32, 32, 28, 0.06);
+
+        --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --font-serif: Georgia, "Times New Roman", serif;
+
+        --space-1: 8px;
+        --space-2: 16px;
+        --space-3: 24px;
+        --space-4: 32px;
+        --space-5: 40px;
+
+        --radius-sm: 8px;
+        --radius-md: 12px;
+        --radius-lg: 16px;
+      }
+
+      [data-theme="dark"] {
+        --bg: #171815;
+        --surface: #20211d;
+        --surface-muted: #292b25;
+        --text: #f3efe6;
+        --text-muted: #aaa397;
+        --line: #34362f;
+        --line-strong: #494b42;
+        --accent: #91a56d;
+        --accent-strong: #b2c78b;
+        --accent-soft: #2b3324;
+        --amber: #d0a35c;
+        --danger: #d07b6f;
+        --shadow: none;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-sans);
+        letter-spacing: 0;
+      }
+
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 248px minmax(0, 1fr) 360px;
+        min-height: 100vh;
+      }
+
+      .sidebar,
+      .inspector {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        overflow: auto;
+        background: color-mix(in srgb, var(--surface) 86%, transparent);
+      }
+
+      .sidebar {
+        padding: var(--space-3);
+        border-right: 1px solid var(--line);
+      }
+
+      .brand {
+        display: grid;
+        gap: 4px;
+        padding-bottom: var(--space-3);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brand strong {
+        font-size: 18px;
+        letter-spacing: -0.02em;
+      }
+
+      .brand span,
+      .eyebrow,
+      .meta,
+      .label {
+        color: var(--text-muted);
+        font-size: 12px;
+        font-weight: 650;
+        letter-spacing: 0.02em;
+      }
+
+      .nav {
+        display: grid;
+        gap: var(--space-1);
+        margin-top: var(--space-3);
+      }
+
+      .nav button,
+      .icon-button,
+      .secondary-button,
+      .primary-button {
+        min-height: 40px;
+        border: 1px solid transparent;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--text);
+      }
+
+      .nav button {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 10px;
+        text-align: left;
+      }
+
+      .nav button.active {
+        border-color: var(--line);
+        background: var(--surface-muted);
+      }
+
+      .nav-count {
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+
+      .main {
+        min-width: 0;
+        padding: var(--space-4);
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-2);
+        margin-bottom: var(--space-3);
+      }
+
+      .title-stack h1 {
+        margin: 0;
+        font-size: clamp(38px, 5vw, 72px);
+        line-height: 0.95;
+        letter-spacing: -0.06em;
+      }
+
+      .title-stack p {
+        max-width: 620px;
+        margin: 10px 0 0;
+        color: var(--text-muted);
+        line-height: 1.5;
+      }
+
+      .top-actions {
+        display: flex;
+        gap: var(--space-1);
+      }
+
+      .primary-button,
+      .secondary-button,
+      .icon-button {
+        padding: 0 14px;
+        border-color: var(--line);
+        background: var(--surface);
+      }
+
+      .primary-button {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #fffdf8;
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: var(--space-1);
+        margin-bottom: var(--space-3);
+      }
+
+      .summary-card,
+      .card,
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+
+      .summary-card {
+        padding: 14px;
+      }
+
+      .summary-card strong {
+        display: block;
+        margin-top: 8px;
+        font-size: 26px;
+        letter-spacing: -0.04em;
+      }
+
+      .work-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+        gap: var(--space-2);
+      }
+
+      .card {
+        padding: var(--space-2);
+      }
+
+      .card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-2);
+        margin-bottom: var(--space-2);
+      }
+
+      .focus {
+        display: grid;
+        gap: var(--space-2);
+      }
+
+      .focus h2 {
+        margin: 0;
+        font-size: clamp(28px, 4vw, 44px);
+        line-height: 1;
+        letter-spacing: -0.055em;
+      }
+
+      .progress {
+        height: 8px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: var(--surface-muted);
+      }
+
+      .progress span {
+        display: block;
+        width: 58%;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--accent);
+      }
+
+      .timeline {
+        display: grid;
+        gap: var(--space-1);
+      }
+
+      .task-row {
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        min-height: 56px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .task-row:last-child {
+        border-bottom: 0;
+      }
+
+      .check {
+        width: 20px;
+        height: 20px;
+        border: 1px solid var(--line-strong);
+        border-radius: 6px;
+        background: var(--surface);
+      }
+
+      .task-title {
+        overflow: hidden;
+        font-weight: 680;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .task-meta {
+        display: flex;
+        gap: 6px;
+        margin-top: 4px;
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 2px 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+
+      .inbox textarea,
+      .reflection textarea {
+        width: 100%;
+        min-height: 96px;
+        resize: vertical;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        background: var(--surface);
+        color: var(--text);
+        outline: none;
+      }
+
+      .inbox textarea:focus,
+      .reflection textarea:focus {
+        border-color: var(--accent);
+      }
+
+      .journey-map {
+        display: grid;
+        gap: var(--space-1);
+      }
+
+      .stage {
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+      }
+
+      .stage-marker {
+        width: 22px;
+        height: 22px;
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        background: var(--surface);
+      }
+
+      .stage.active {
+        border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+        background: var(--accent-soft);
+      }
+
+      .stage.active .stage-marker {
+        background: var(--accent);
+      }
+
+      .inspector {
+        display: grid;
+        align-content: start;
+        gap: var(--space-2);
+        padding: var(--space-3) var(--space-2);
+        border-left: 1px solid var(--line);
+      }
+
+      .panel {
+        padding: var(--space-2);
+      }
+
+      .ritual-list,
+      .project-list {
+        display: grid;
+        gap: 6px;
+      }
+
+      .compact-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-1);
+        min-height: 38px;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .compact-row:last-child {
+        border-bottom: 0;
+      }
+
+      .reflection {
+        grid-column: 1 / -1;
+      }
+
+      @media (max-width: 1120px) {
+        .app {
+          grid-template-columns: 220px minmax(0, 1fr);
+        }
+
+        .inspector {
+          position: static;
+          grid-column: 1 / -1;
+          height: auto;
+          border-left: 0;
+          border-top: 1px solid var(--line);
+        }
+      }
+
+      @media (max-width: 820px) {
+        .app,
+        .work-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          position: static;
+          height: auto;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .nav {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .nav button {
+          justify-content: center;
+        }
+
+        .main {
+          padding: var(--space-2);
+        }
+
+        .summary {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .topbar {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+      }
+
+      @media (max-width: 520px) {
+        .summary {
+          grid-template-columns: 1fr;
+        }
+
+        .task-row,
+        .stage {
+          grid-template-columns: 24px minmax(0, 1fr);
+        }
+
+        .task-row .pill,
+        .stage .pill {
+          grid-column: 2;
+          justify-self: start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <strong>Second Brain</strong>
+          <span>Daily operating system</span>
+        </div>
+        <nav class="nav">
+          <button class="active">Сегодня <span class="nav-count">4</span></button>
+          <button>Неделя <span class="nav-count">12</span></button>
+          <button>Путь <span class="nav-count">3</span></button>
+          <button>Память <span class="nav-count">28</span></button>
+        </nav>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="title-stack">
+            <div class="eyebrow">воскресенье, 28 июня</div>
+            <h1>Сегодня</h1>
+            <p>Короткий план дня, актуальные действия и контекст, который ассистент должен учитывать.</p>
+          </div>
+          <div class="top-actions">
+            <button class="secondary-button">Пересобрать</button>
+            <button class="primary-button">AI Inbox</button>
+          </div>
+        </header>
+
+        <section class="summary">
+          <article class="summary-card">
+            <span class="label">Day</span>
+            <strong>58%</strong>
+          </article>
+          <article class="summary-card">
+            <span class="label">Open</span>
+            <strong>4</strong>
+          </article>
+          <article class="summary-card">
+            <span class="label">Rituals</span>
+            <strong>2/4</strong>
+          </article>
+          <article class="summary-card">
+            <span class="label">Stage</span>
+            <strong>Trial</strong>
+          </article>
+        </section>
+
+        <section class="work-grid">
+          <article class="card focus">
+            <div class="card-header">
+              <span class="label">Фокус дня</span>
+              <span class="pill">steady</span>
+            </div>
+            <h2>Закрыть один реальный шаг по продукту без расползания</h2>
+            <div class="progress"><span></span></div>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <span class="label">Ключевые задачи</span>
+              <button class="icon-button">+</button>
+            </div>
+            <div class="timeline">
+              <div class="task-row">
+                <span class="check"></span>
+                <div>
+                  <div class="task-title">Сжать Today до рабочего списка, не дашборда</div>
+                  <div class="task-meta"><span>work</span><span>Second Brain</span></div>
+                </div>
+                <span class="pill">high</span>
+              </div>
+              <div class="task-row">
+                <span class="check"></span>
+                <div>
+                  <div class="task-title">Определить, какие данные нужны для journey review</div>
+                  <div class="task-meta"><span>work</span><span>trial</span></div>
+                </div>
+                <span class="pill">45m</span>
+              </div>
+              <div class="task-row">
+                <span class="check"></span>
+                <div>
+                  <div class="task-title">Оставить тренировку как обязательный ритуал</div>
+                  <div class="task-meta"><span>health</span><span>ритуал</span></div>
+                </div>
+                <span class="pill">19:00</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="card inbox">
+            <div class="card-header">
+              <span class="label">AI Inbox</span>
+              <span class="pill">autonomous draft</span>
+            </div>
+            <textarea placeholder="Напиши мысль, задачу, перенос или сомнение. Ассистент разложит и покажет спорные выводы."></textarea>
+          </article>
+
+          <article class="card journey-map">
+            <div class="card-header">
+              <span class="label">Путь проекта</span>
+              <span class="pill">Second Brain MVP</span>
+            </div>
+            <div class="stage">
+              <span class="stage-marker"></span>
+              <div><strong>Замысел</strong><div class="meta">почему это важно</div></div>
+              <span class="pill">done</span>
+            </div>
+            <div class="stage">
+              <span class="stage-marker"></span>
+              <div><strong>Подготовка</strong><div class="meta">ресурсы и рамки</div></div>
+              <span class="pill">done</span>
+            </div>
+            <div class="stage active">
+              <span class="stage-marker"></span>
+              <div><strong>Испытание</strong><div class="meta">регулярная работа, первые сложности</div></div>
+              <span class="pill">now</span>
+            </div>
+          </article>
+
+          <article class="card reflection">
+            <div class="card-header">
+              <span class="label">Вечерняя рефлексия</span>
+              <span class="pill">draft</span>
+            </div>
+            <textarea placeholder="Что завершено, что перенести, где был перегруз, что ассистент должен запомнить."></textarea>
+          </article>
+        </section>
+      </main>
+
+      <aside class="inspector">
+        <section class="panel">
+          <div class="card-header">
+            <span class="label">Ритуалы</span>
+            <span class="pill">2/4</span>
+          </div>
+          <div class="ritual-list">
+            <div class="compact-row"><span>Утренний план</span><span class="pill">done</span></div>
+            <div class="compact-row"><span>Фокус-блок</span><span class="pill">open</span></div>
+            <div class="compact-row"><span>Спорт</span><span class="pill">19:00</span></div>
+            <div class="compact-row"><span>Review</span><span class="pill">night</span></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="card-header">
+            <span class="label">Проекты</span>
+            <span class="pill">3 active</span>
+          </div>
+          <div class="project-list">
+            <div class="compact-row"><span>Second Brain MVP</span><span class="pill">trial</span></div>
+            <div class="compact-row"><span>Спорт и восстановление</span><span class="pill">prep</span></div>
+            <div class="compact-row"><span>Личные хвосты</span><span class="pill">call</span></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="card-header">
+            <span class="label">Ассистент видит</span>
+            <span class="pill">memory</span>
+          </div>
+          <p class="meta">Новый проект сейчас стоит проверять через ресурс и загрузку. Есть риск уйти в визуал вместо рабочей петли: план → действие → review.</p>
+        </section>
+      </aside>
+    </div>
+  </body>
+</html>

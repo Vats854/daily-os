@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Daily OS v2 — Focus Workbench</title>
+  <style>
+    :root {
+      --bg: #f7fafc;
+      --panel: #ffffff;
+      --panel-soft: #f9fbfd;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --faint: #94a3b8;
+      --line: #e2e8f0;
+      --line-strong: #cbd5e1;
+      --blue: #2563eb;
+      --blue-soft: #eff6ff;
+      --cyan: #0891b2;
+      --green: #059669;
+      --green-soft: #ecfdf5;
+      --amber: #d97706;
+      --amber-soft: #fffbeb;
+      --red: #dc2626;
+      --red-soft: #fef2f2;
+      --radius: 16px;
+      --shadow: 0 16px 40px rgba(15, 23, 42, .06);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 15% -10%, rgba(37, 99, 235, .12), transparent 28%),
+        radial-gradient(circle at 82% 0%, rgba(8, 145, 178, .10), transparent 30%),
+        var(--bg);
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    button, input, textarea { font: inherit; }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 236px minmax(0, 1fr) 344px;
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--line);
+      background: rgba(255, 255, 255, .72);
+      padding: 20px 14px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 8px 18px;
+      font-weight: 760;
+      letter-spacing: -.03em;
+    }
+
+    .mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 11px;
+      background: linear-gradient(135deg, #2563eb, #22c55e);
+      box-shadow: 0 10px 26px rgba(37, 99, 235, .22);
+    }
+
+    .nav-group { margin-top: 12px; }
+    .nav-title {
+      padding: 10px 10px 6px;
+      color: var(--faint);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      font-weight: 760;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-height: 34px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      color: #475569;
+      cursor: default;
+    }
+    .nav-item.active {
+      background: var(--blue-soft);
+      color: #1d4ed8;
+      font-weight: 720;
+    }
+    .count {
+      color: var(--faint);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .main {
+      min-width: 0;
+      padding: 22px 24px 32px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 30px;
+      line-height: 1.05;
+      letter-spacing: -.055em;
+    }
+
+    h2, h3, p { margin-top: 0; }
+    h2 { font-size: 18px; letter-spacing: -.03em; margin-bottom: 10px; }
+    h3 { font-size: 14px; letter-spacing: -.015em; margin-bottom: 8px; }
+
+    .subline {
+      margin-top: 7px;
+      color: var(--muted);
+      max-width: 760px;
+      line-height: 1.45;
+    }
+
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn {
+      border: 1px solid transparent;
+      background: var(--ink);
+      color: white;
+      min-height: 36px;
+      padding: 8px 12px;
+      border-radius: 11px;
+      font-weight: 720;
+      cursor: default;
+      white-space: nowrap;
+    }
+    .btn.secondary {
+      background: #fff;
+      color: #1e293b;
+      border-color: var(--line-strong);
+    }
+    .btn.blue {
+      background: #1d4ed8;
+    }
+
+    .workbench {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .panel {
+      background: rgba(255, 255, 255, .88);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(249, 251, 253, .82);
+    }
+
+    .panel-body { padding: 14px 16px; }
+
+    .focus-strip {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      padding: 16px;
+      margin-bottom: 16px;
+      background: linear-gradient(135deg, #ffffff, #edf7ff);
+    }
+
+    .focus-strip strong {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 17px;
+      letter-spacing: -.025em;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 24px;
+      padding: 4px 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: #475569;
+      font-size: 12px;
+      font-weight: 690;
+      white-space: nowrap;
+    }
+    .pill.must { color: #1d4ed8; background: var(--blue-soft); border-color: #bfdbfe; }
+    .pill.review { color: var(--amber); background: var(--amber-soft); border-color: #fde68a; }
+    .pill.done { color: var(--green); background: var(--green-soft); border-color: #bbf7d0; }
+    .pill.risk { color: var(--red); background: var(--red-soft); border-color: #fecaca; }
+
+    .muted { color: var(--muted); }
+    .small { font-size: 12px; line-height: 1.4; }
+
+    .timeline {
+      display: grid;
+      gap: 8px;
+    }
+
+    .time-row {
+      display: grid;
+      grid-template-columns: 74px minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      padding: 11px 0;
+      border-bottom: 1px solid #edf2f7;
+    }
+    .time-row:last-child { border-bottom: 0; }
+    .time { color: var(--faint); font-weight: 720; font-variant-numeric: tabular-nums; }
+    .task-title { font-weight: 730; margin-bottom: 3px; }
+    .task-note { color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .table th, .table td {
+      padding: 10px 0;
+      border-bottom: 1px solid #edf2f7;
+      text-align: left;
+      vertical-align: top;
+    }
+    .table th {
+      color: var(--faint);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .table tr:last-child td { border-bottom: 0; }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .review-list { display: grid; gap: 10px; }
+    .review-item {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: #fff;
+    }
+    .review-item strong { display: block; margin-bottom: 5px; }
+
+    .inspector {
+      border-left: 1px solid var(--line);
+      background: rgba(255, 255, 255, .74);
+      padding: 22px 18px;
+      overflow: auto;
+    }
+
+    .inspector-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+      margin-bottom: 12px;
+      box-shadow: 0 10px 28px rgba(15, 23, 42, .04);
+    }
+
+    .project-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #edf2f7;
+    }
+    .project-row:last-child { border-bottom: 0; }
+
+    .journey {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 5px;
+      margin-top: 10px;
+    }
+    .stage {
+      height: 7px;
+      border-radius: 999px;
+      background: #e2e8f0;
+    }
+    .stage.active { background: linear-gradient(90deg, #2563eb, #0891b2); }
+    .stage.done { background: #86efac; }
+
+    .note-box {
+      padding: 12px;
+      border-radius: 14px;
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      color: #334155;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 1180px) {
+      .app { grid-template-columns: 208px minmax(0, 1fr); }
+      .inspector { display: none; }
+      .workbench { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 760px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .main { padding: 16px; }
+      .topbar, .focus-strip, .time-row, .split { grid-template-columns: 1fr; display: grid; }
+      .actions { justify-content: stretch; }
+      .btn { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand"><div class="mark"></div><span>Daily OS</span></div>
+      <div class="nav-group">
+        <div class="nav-title">Рабочие поверхности</div>
+        <div class="nav-item">Inbox <span class="count">8</span></div>
+        <div class="nav-item active">Сегодня <span class="count">5</span></div>
+        <div class="nav-item">Неделя <span class="count">12</span></div>
+        <div class="nav-item">Проекты <span class="count">4</span></div>
+        <div class="nav-item">Доска</div>
+        <div class="nav-item">Лог <span class="count">3</span></div>
+      </div>
+      <div class="nav-group">
+        <div class="nav-title">Большие фокусы</div>
+        <div class="nav-item">Работа <span class="count">trial</span></div>
+        <div class="nav-item">Здоровье <span class="count">prep</span></div>
+        <div class="nav-item">AI / code <span class="count">call</span></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <h1>Сегодня</h1>
+          <div class="subline">План дня как рабочая поверхность: обязательства, следующие действия, ограничения и решения, которые ассистент предлагает пересмотреть.</div>
+        </div>
+        <div class="actions">
+          <button class="btn secondary">Разобрать inbox</button>
+          <button class="btn blue">Проверить план</button>
+        </div>
+      </div>
+
+      <section class="panel focus-strip">
+        <div>
+          <span class="pill must">главный фокус</span>
+          <strong>Поиск работы: 3 качественных отклика до вечера</strong>
+          <div class="small muted">Не “заняться карьерой”, а конкретно: выбрать вакансии, адаптировать верхний блок, отправить, зафиксировать вывод.</div>
+        </div>
+        <span class="pill review">2 решения на ревью</span>
+      </section>
+
+      <div class="workbench">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Временные блоки</h2>
+            <span class="small muted">редактируемый план</span>
+          </div>
+          <div class="panel-body timeline">
+            <div class="time-row">
+              <div class="time">13:30</div>
+              <div><div class="task-title">Еда + прогулка</div><div class="task-note">В дороге — один источник: книга или выбранный материал. Не открывать пять курсов.</div></div>
+              <span class="pill done">recovery</span>
+            </div>
+            <div class="time-row">
+              <div class="time">16:00</div>
+              <div><div class="task-title">Отклики</div><div class="task-note">3 вакансии: почему подхожу, какой риск, какую версию резюме использовать.</div></div>
+              <span class="pill must">must</span>
+            </div>
+            <div class="time-row">
+              <div class="time">18:00</div>
+              <div><div class="task-title">Резюме · версия эффективности</div><div class="task-note">Доработать “О себе” без пафоса и проверить, что эффективность стоит выше бюджетирования.</div></div>
+              <span class="pill">deep</span>
+            </div>
+            <div class="time-row">
+              <div class="time">20:00</div>
+              <div><div class="task-title">Обучение</div><div class="task-note">Выбрать один трек: vibe coding или математика. Сделать короткий конспект в Obsidian.</div></div>
+              <span class="pill review">choose</span>
+            </div>
+            <div class="time-row">
+              <div class="time">22:00</div>
+              <div><div class="task-title">Review дня</div><div class="task-note">Что было сделано, что заняло больше времени, что переносим, что ассистент должен оспорить.</div></div>
+              <span class="pill">10 min</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Рабочий список</h2>
+            <span class="small muted">без декоративных KPI</span>
+          </div>
+          <div class="panel-body">
+            <table class="table">
+              <thead><tr><th>Объект</th><th>Следующий шаг</th><th>Статус</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Резюме</strong><br><span class="small muted">версия эффективность</span></td><td>собрать финальный блок “О себе”</td><td><span class="pill review">review</span></td></tr>
+                <tr><td><strong>Поиск работы</strong><br><span class="small muted">рынок сегодня</span></td><td>3 точечных отклика, не 10 случайных</td><td><span class="pill must">today</span></td></tr>
+                <tr><td><strong>Daily OS</strong><br><span class="small muted">дизайн</span></td><td>выбрать концепт: плотный tracker + calm today</td><td><span class="pill">draft</span></td></tr>
+                <tr><td><strong>Обучение</strong><br><span class="small muted">трек</span></td><td>не смешивать математику, vibe coding и менеджмент в один блок</td><td><span class="pill review">decision</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="split">
+        <section class="panel">
+          <div class="panel-head"><h2>Проекты / hero layer</h2><span class="small muted">только большие фокусы</span></div>
+          <div class="panel-body">
+            <div class="project-row">
+              <div><strong>Найти работу</strong><div class="small muted">Этап: Испытание · активный рынок</div><div class="journey"><div class="stage done"></div><div class="stage done"></div><div class="stage active"></div><div class="stage"></div><div class="stage"></div><div class="stage"></div><div class="stage"></div></div></div>
+              <span class="pill must">main</span>
+            </div>
+            <div class="project-row">
+              <div><strong>Собрать Daily OS</strong><div class="small muted">Этап: Подготовка · выбрать дизайн-направление</div><div class="journey"><div class="stage done"></div><div class="stage active"></div><div class="stage"></div><div class="stage"></div><div class="stage"></div><div class="stage"></div><div class="stage"></div></div></div>
+              <span class="pill">side</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>AI review</h2><span class="small muted">что ассистент оспаривает</span></div>
+          <div class="panel-body review-list">
+            <div class="review-item"><strong>Обучение слишком широкое</strong><div class="small muted">Сегодня выбрать один источник. Остальные — в backlog, иначе снова будет выбор вместо действия.</div></div>
+            <div class="review-item"><strong>Отклики нельзя ставить поздно</strong><div class="small muted">Если это главный приоритет, слот должен быть до вечерней усталости.</div></div>
+            <div class="review-item"><strong>Геймификация не для задач</strong><div class="small muted">Путь героя применяем к проектам: работа, здоровье, Daily OS. Задачи остаются обычными рабочими объектами.</div></div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <aside class="inspector">
+      <div class="inspector-card">
+        <span class="pill must">selected object</span>
+        <h3 style="margin-top:10px">Поиск работы</h3>
+        <p class="small muted">Главный активный проект. Следующий переход hero journey — из “Испытание” в “Узкое место”, если 2 недели откликов не дают интервью.</p>
+      </div>
+      <div class="inspector-card">
+        <h3>Что можно сделать отсюда</h3>
+        <div class="review-list">
+          <button class="btn secondary">Создать 3 отклика</button>
+          <button class="btn secondary">Записать вывод по вакансии</button>
+          <button class="btn secondary">Перенести обучение в backlog</button>
+        </div>
+      </div>
+      <div class="inspector-card">
+        <h3>Почему этот блок есть</h3>
+        <div class="note-box small">Он помогает принять решение и выполнить действие. Если блок не помогает выбрать, подтвердить, изменить или сравнить — его нет в интерфейсе.</div>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

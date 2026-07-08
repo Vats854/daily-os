@@ -1,0 +1,32 @@
+Use the project instructions in AGENTS.md.
+Also use the installed skills in this order if available:
+1. impeccable
+2. design-taste-frontend as critic only
+3. emil-design-eng for interaction/polish review only
+
+Project: /Users/maffaka/Documents/New project
+
+Task: Audit the current Daily OS UI and prepare the next implementation plan.
+
+Read:
+- PRODUCT.md
+- DESIGN.md
+- docs/interface-architecture-reset.md
+- docs/ui-calibration-audit.md
+- docs/full-redesign-lab-report.md
+- public/index.html
+- public/styles.css
+- public/app.js
+
+Do not edit app code yet.
+
+Write docs/codex-ui-audit-next.md with:
+1. screen-by-screen verdict: Today, Week, Projects, Board, Log;
+2. what still feels like patched CSS instead of designed UI;
+3. which screens should use inspector and which should not;
+4. where layout/IA should be changed, not just styled;
+5. what to delete or consolidate from CSS/DOM;
+6. one recommended implementation plan with phases;
+7. exact verification checklist for browser.
+
+Be blunt. Avoid generic advice. Do not propose fake metrics/widgets.

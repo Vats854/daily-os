@@ -1,0 +1,3 @@
+Created [docs/agent-design-smoke-test.md](/Users/maffaka/Documents/New project/docs/agent-design-smoke-test.md).
+
+It’s 527 words, names both local Daily OS agents, and gives blunt verdicts on Inbox, Today, Projects/Hero Journey, and what not to do next. No app source files were modified.
