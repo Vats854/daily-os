@@ -6,9 +6,28 @@
     <meta name="theme-color" content="#ffffff" />
     <title>Second Brain</title>
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/styles.css?v=67" />
+    <link rel="stylesheet" href="/styles.css?v=68" />
   </head>
-  <body>
+  <body data-auth="checking">
+    <section class="auth-gate" id="authGate" aria-label="Вход в Daily OS">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <span class="brand-mark"></span>
+          <div>
+            <strong>Second Brain</strong>
+            <span>Daily OS</span>
+          </div>
+        </div>
+        <div class="auth-copy">
+          <p class="eyebrow">Private workspace</p>
+          <h1>Войди, чтобы открыть свой Daily OS</h1>
+          <p>Планы, привычки, входящие и действия ассистента синхронизируются только с твоей учёткой.</p>
+        </div>
+        <button class="primary-button auth-gate-button" id="authGateButton" type="button">Войти через GitHub</button>
+        <p class="auth-footnote" id="authGateStatus">Проверяем подключение Supabase...</p>
+      </div>
+    </section>
+
     <div class="app-shell">
       <aside class="sidebar" aria-label="Навигация">
         <div class="brand">
@@ -248,6 +267,6 @@
       </aside>
     </div>
 
-    <script src="/app.js?v=67" type="module"></script>
+    <script src="/app.js?v=68" type="module"></script>
   </body>
 </html>

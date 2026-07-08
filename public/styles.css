@@ -35,6 +35,97 @@ body {
 button, textarea, input { font: inherit; }
 button { cursor: pointer; }
 
+body[data-auth="checking"],
+body[data-auth="signed-out"] {
+  min-height: 100vh;
+  background:
+    linear-gradient(90deg, rgba(228, 234, 242, 0.45) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(228, 234, 242, 0.45) 1px, transparent 1px),
+    var(--paper);
+  background-size: 64px 64px;
+}
+
+.auth-gate {
+  display: none;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+body[data-auth="checking"] .auth-gate,
+body[data-auth="signed-out"] .auth-gate {
+  display: grid;
+}
+
+body[data-auth="checking"] .app-shell,
+body[data-auth="signed-out"] .app-shell {
+  display: none;
+}
+
+.auth-card {
+  display: grid;
+  gap: 20px;
+  width: min(100%, 430px);
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 24px 60px rgba(20, 40, 80, 0.08);
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.auth-brand strong,
+.auth-brand span {
+  display: block;
+}
+
+.auth-brand strong {
+  font-size: 14px;
+  font-weight: 720;
+}
+
+.auth-brand span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.auth-copy h1 {
+  margin: 6px 0 0;
+  color: var(--ink);
+  font-size: 30px;
+  font-weight: 740;
+  line-height: 1.05;
+  letter-spacing: -0.045em;
+}
+
+.auth-copy p:last-child,
+.auth-footnote {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.auth-gate-button {
+  min-height: 44px;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.auth-footnote {
+  min-height: 21px;
+  margin: 0;
+  font-size: 12px;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 204px minmax(0, 1fr);

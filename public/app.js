@@ -471,34 +471,65 @@ function updateAuthUi() {
   const status = document.querySelector("#authStatus");
   const authButton = document.querySelector("#authButton");
   const signOutButton = document.querySelector("#signOutButton");
-  if (!status || !authButton || !signOutButton) return;
+  const gateButton = document.querySelector("#authGateButton");
+  const gateStatus = document.querySelector("#authGateStatus");
+  if (!status || !authButton || !signOutButton || !gateButton || !gateStatus) return;
 
   authButton.disabled = false;
   signOutButton.disabled = false;
+  gateButton.disabled = false;
   authButton.classList.toggle("is-hidden", Boolean(cloudSync.session));
   signOutButton.classList.toggle("is-hidden", !cloudSync.session);
 
   if (!cloudSync.configured) {
-    status.textContent = "local";
-    authButton.textContent = "Supabase off";
+    document.body.dataset.auth = isLocalDev ? "local" : "signed-out";
+    status.textContent = isLocalDev ? "local" : "auth off";
+    authButton.textContent = isLocalDev ? "Supabase off" : "Auth недоступен";
+    gateButton.textContent = "Вход временно недоступен";
+    gateButton.disabled = true;
+    gateStatus.textContent = isLocalDev
+      ? "Локальный режим без облачной синхронизации."
+      : "Supabase config не найден в этом deployment.";
     authButton.disabled = true;
     return;
   }
 
   if (cloudSync.error) {
+    document.body.dataset.auth = cloudSync.session ? "signed-in" : "signed-out";
     status.textContent = "sync error";
     status.title = cloudSync.error;
+    gateButton.textContent = "Повторить вход через GitHub";
+    gateStatus.textContent = cloudSync.error;
     return;
   }
 
   status.title = "";
   if (cloudSync.session) {
+    document.body.dataset.auth = "signed-in";
     status.textContent = `sync · ${authLabel(cloudSync.session)}`;
+    gateStatus.textContent = "Вход выполнен.";
     return;
   }
 
-  status.textContent = cloudSync.status;
+  document.body.dataset.auth = "signed-out";
+  status.textContent = cloudSync.status === "redirect" ? "redirect" : "private";
   authButton.textContent = "GitHub вход";
+  gateButton.textContent = cloudSync.status === "redirect" ? "Открываем GitHub..." : "Войти через GitHub";
+  gateButton.disabled = cloudSync.status === "redirect";
+  gateStatus.textContent = "Доступ к рабочему пространству откроется после GitHub-входа.";
+}
+
+async function beginGithubSignIn() {
+  cloudSync.error = "";
+  cloudSync.status = "redirect";
+  updateAuthUi();
+  try {
+    await signInWithGithub();
+  } catch (error) {
+    cloudSync.error = error instanceof Error ? error.message : "GitHub sign-in failed";
+    cloudSync.status = "local";
+    updateAuthUi();
+  }
 }
 
 async function hydrateCloudState(session) {
@@ -555,12 +586,13 @@ async function initAuth() {
     }
 
     cloudSync.session = await getAuthSession();
+    cloudSync.status = cloudSync.session ? "synced" : "private";
     updateAuthUi();
     if (cloudSync.session) await hydrateCloudState(cloudSync.session);
 
     await onAuthStateChange(async (session) => {
       cloudSync.session = session;
-      cloudSync.status = session ? "syncing" : "local";
+      cloudSync.status = session ? "syncing" : "private";
       cloudSync.error = "";
       updateAuthUi();
       if (session) await hydrateCloudState(session);
@@ -1861,23 +1893,14 @@ document.querySelector("#resetDemo").addEventListener("click", () => {
   saveState();
 });
 
-document.querySelector("#authButton")?.addEventListener("click", async () => {
-  cloudSync.error = "";
-  cloudSync.status = "redirect";
-  updateAuthUi();
-  try {
-    await signInWithGithub();
-  } catch (error) {
-    cloudSync.error = error instanceof Error ? error.message : "GitHub sign-in failed";
-    updateAuthUi();
-  }
-});
+document.querySelector("#authButton")?.addEventListener("click", beginGithubSignIn);
+document.querySelector("#authGateButton")?.addEventListener("click", beginGithubSignIn);
 
 document.querySelector("#signOutButton")?.addEventListener("click", async () => {
   try {
     await signOut();
     cloudSync.session = null;
-    cloudSync.status = "local";
+    cloudSync.status = "private";
     updateAuthUi();
   } catch (error) {
     cloudSync.error = error instanceof Error ? error.message : "Sign out failed";
