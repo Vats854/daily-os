@@ -51,6 +51,37 @@ const journeyStages = [
 ];
 
 const todayIso = new Date().toISOString().slice(0, 10);
+const dayMs = 24 * 60 * 60 * 1000;
+const taskStatuses = ["inbox", "backlog", "this_week", "today", "done"];
+const priorities = ["low", "medium", "high"];
+const habitGroups = ["morning", "afternoon", "night", "anytime"];
+const habitGroupLabels = {
+  morning: "Morning",
+  afternoon: "Afternoon",
+  night: "Night",
+  anytime: "Anytime"
+};
+const focusModes = {
+  focus: { label: "Focus 25", seconds: 25 * 60 },
+  short_break: { label: "Break 5", seconds: 5 * 60 }
+};
+const soundCategories = {
+  deep_work: "Deep Work",
+  calm_focus: "Calm Focus",
+  coding: "Coding",
+  reading: "Reading",
+  rain: "Rain",
+  brown_noise: "Brown Noise"
+};
+
+const focusRuntime = {
+  timerId: null,
+  startedAt: null,
+  audioContext: null,
+  source: null,
+  gain: null,
+  isSoundPlaying: false
+};
 
 const projectIds = {
   pwa: crypto.randomUUID(),
@@ -63,6 +94,15 @@ const seedState = {
     autonomy: "maximum",
     activeView: "today"
   },
+  focus: {
+    selectedTaskId: null,
+    timerMode: "focus",
+    remainingSeconds: focusModes.focus.seconds,
+    soundCategory: "deep_work",
+    volume: 0.35,
+    running: false
+  },
+  focusSessions: [],
   dailyPlan: {
     date: todayIso,
     focus: "Собрать понятный день без перегруза",
@@ -179,6 +219,7 @@ let state = loadState();
 state.ui = state.ui || {};
 state.ui.selectedDayBlockIndex = Number.isInteger(state.ui.selectedDayBlockIndex) ? state.ui.selectedDayBlockIndex : 1;
 state.ui.selectedInboxId = state.ui.selectedInboxId || null;
+state.ui.selectedTaskId = state.tasks.some((item) => item.id === state.ui.selectedTaskId) ? state.ui.selectedTaskId : null;
 
 function task(title, status = "inbox", area = "work", priority = "medium", estimate = 30, projectId = null) {
   return {
@@ -189,6 +230,9 @@ function task(title, status = "inbox", area = "work", priority = "medium", estim
     area,
     priority,
     estimate,
+    previousStatus: status === "done" ? "today" : status,
+    dueDate: "",
+    tags: [],
     needsReview: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -247,6 +291,7 @@ function habit(title, area = "personal", streak = 0) {
     id: crypto.randomUUID(),
     title,
     area,
+    group: area === "health" ? "afternoon" : title.toLowerCase().includes("вечер") ? "night" : "morning",
     streak,
     completions: {},
     createdAt: new Date().toISOString()
@@ -313,6 +358,19 @@ function normalizeState(nextState) {
   if (!["inbox", "today", "week", "projects", "board", "log"].includes(nextState.settings.activeView)) {
     nextState.settings.activeView = "today";
   }
+  nextState.ui = nextState.ui || {};
+  nextState.focus = {
+    ...seedState.focus,
+    ...(nextState.focus || {})
+  };
+  if (!focusModes[nextState.focus.timerMode]) nextState.focus.timerMode = "focus";
+  if (!Number.isFinite(nextState.focus.remainingSeconds) || nextState.focus.remainingSeconds <= 0) {
+    nextState.focus.remainingSeconds = focusModes[nextState.focus.timerMode].seconds;
+  }
+  if (!soundCategories[nextState.focus.soundCategory]) nextState.focus.soundCategory = "deep_work";
+  nextState.focus.volume = Math.max(0, Math.min(1, Number(nextState.focus.volume) || seedState.focus.volume));
+  nextState.focus.running = false;
+  nextState.focusSessions = Array.isArray(nextState.focusSessions) ? nextState.focusSessions : [];
   nextState.dailyPlan = { ...seedState.dailyPlan, ...(nextState.dailyPlan || {}) };
   nextState.dailyPlan.timeBlocks = Array.isArray(nextState.dailyPlan.timeBlocks)
     ? nextState.dailyPlan.timeBlocks
@@ -323,12 +381,24 @@ function normalizeState(nextState) {
   nextState.projectStageEvents = Array.isArray(nextState.projectStageEvents) ? nextState.projectStageEvents : structuredClone(seedState.projectStageEvents);
   nextState.projectObstacles = Array.isArray(nextState.projectObstacles) ? nextState.projectObstacles : structuredClone(seedState.projectObstacles);
   nextState.tasks = Array.isArray(nextState.tasks) ? nextState.tasks : [];
+  nextState.tasks.forEach((item) => {
+    if (!taskStatuses.includes(item.status)) item.status = "inbox";
+    if (!priorities.includes(item.priority)) item.priority = "medium";
+    item.previousStatus = taskStatuses.includes(item.previousStatus) && item.previousStatus !== "done" ? item.previousStatus : (item.status === "done" ? "today" : item.status);
+    item.estimate = Number.isFinite(Number(item.estimate)) ? Number(item.estimate) : 30;
+    item.dueDate = item.dueDate || "";
+    item.tags = Array.isArray(item.tags) ? item.tags : [];
+  });
+  if (nextState.focus.selectedTaskId && !nextState.tasks.some((item) => item.id === nextState.focus.selectedTaskId)) {
+    nextState.focus.selectedTaskId = null;
+  }
   nextState.habits = Array.isArray(nextState.habits) && nextState.habits.length
     ? nextState.habits
     : structuredClone(seedState.habits);
   nextState.habits.forEach((item) => {
     item.completions = item.completions || {};
     item.streak = Number.isFinite(item.streak) ? item.streak : 0;
+    item.group = habitGroups.includes(item.group) ? item.group : "anytime";
   });
   nextState.notes = Array.isArray(nextState.notes) ? nextState.notes : [];
   nextState.inboxItems = Array.isArray(nextState.inboxItems) ? nextState.inboxItems : [];
@@ -766,11 +836,13 @@ async function processInbox(text) {
     const category = suggestCategoryForInbox(inboxItem);
     const projectItem = category.kind === "project" ? findByTitle(state.projects, category.title) : null;
     const routineItem = category.kind === "routine" ? findByTitle(state.routines, category.title) : null;
-    state.tasks.unshift({
+    const newTask = {
       ...task(parsed.title, parsed.status, category.area || parsed.area, parsed.priority, 30, projectItem?.id || null),
       routineId: routineItem?.id || null,
       needsReview: parsed.needsReview
-    });
+    };
+    state.tasks.unshift(newTask);
+    selectTask(newTask.id);
   } else {
     state.notes.unshift({
       id: crypto.randomUUID(),
@@ -1086,10 +1158,119 @@ function renderShell() {
   renderAppInspector(activeView);
 }
 
+function getSelectedTask() {
+  const selectedId = state.ui?.selectedTaskId || state.focus?.selectedTaskId;
+  return state.tasks.find((item) => item.id === selectedId) || null;
+}
+
+function renderOptions(values, selected, labels = {}) {
+  return values.map((value) => `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(labels[value] || value)}</option>`).join("");
+}
+
+function renderTaskLinkOptions(item) {
+  const current = item.projectId ? `project:${item.projectId}` : item.routineId ? `routine:${item.routineId}` : "none";
+  const projects = state.projects
+    .filter((projectItem) => projectItem.status !== "archived")
+    .map((projectItem) => `<option value="project:${escapeHtml(projectItem.id)}" ${current === `project:${projectItem.id}` ? "selected" : ""}>Проект · ${escapeHtml(projectItem.title)}</option>`)
+    .join("");
+  const routines = state.routines
+    .map((routineItem) => `<option value="routine:${escapeHtml(routineItem.id)}" ${current === `routine:${routineItem.id}` ? "selected" : ""}>Рутина · ${escapeHtml(routineItem.title)}</option>`)
+    .join("");
+  return `<option value="none" ${current === "none" ? "selected" : ""}>Без привязки</option>${projects}${routines}`;
+}
+
+function formatSeconds(seconds) {
+  const safe = Math.max(0, Math.floor(Number(seconds) || 0));
+  const minutes = Math.floor(safe / 60);
+  const rest = safe % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
+}
+
+function renderFocusCompanion(item) {
+  const focus = state.focus || seedState.focus;
+  const activeTaskId = focus.selectedTaskId || state.ui?.selectedTaskId || item.id;
+  const isCurrentTask = activeTaskId === item.id;
+  const soundOptions = Object.entries(soundCategories)
+    .map(([key, label]) => `<option value="${escapeHtml(key)}" ${focus.soundCategory === key ? "selected" : ""}>${escapeHtml(label)}</option>`)
+    .join("");
+  return `<section class="focus-companion" data-task-id="${escapeHtml(item.id)}">
+    <div class="focus-companion-head">
+      <div>
+        <span class="label">Focus companion</span>
+        <strong>${escapeHtml(isCurrentTask ? item.title : "Выбрать эту задачу")}</strong>
+      </div>
+      <button class="secondary-button" type="button" data-focus-action="bind-task">${isCurrentTask ? "Выбрана" : "Фокус"}</button>
+    </div>
+    <div class="focus-timer" id="focusTimerValue">${formatSeconds(focus.remainingSeconds)}</div>
+    <div class="focus-mode-row" role="group" aria-label="Режим таймера">
+      ${Object.entries(focusModes).map(([key, mode]) => `<button class="state-button ${focus.timerMode === key ? "active" : ""}" type="button" data-focus-mode="${escapeHtml(key)}">${escapeHtml(mode.label)}</button>`).join("")}
+    </div>
+    <div class="focus-actions">
+      <button class="primary-button" type="button" data-focus-action="${focus.running ? "pause" : "start"}">${focus.running ? "Пауза" : "Старт"}</button>
+      <button class="secondary-button" type="button" data-focus-action="reset">Сброс</button>
+    </div>
+    <div class="sound-panel">
+      <label class="field-stack">
+        <span>Sound stream</span>
+        <select data-focus-field="soundCategory">${soundOptions}</select>
+      </label>
+      <div class="sound-controls">
+        <button class="secondary-button" type="button" data-sound-action="${focusRuntime.isSoundPlaying ? "pause" : "play"}">${focusRuntime.isSoundPlaying ? "Sound off" : "Sound on"}</button>
+        <label class="volume-control">
+          <span>vol</span>
+          <input type="range" min="0" max="1" step="0.05" value="${escapeHtml(focus.volume)}" data-focus-field="volume" />
+        </label>
+      </div>
+    </div>
+  </section>`;
+}
+
+function renderTaskInspector(item) {
+  const category = categoryForTask(item);
+  const areaOptions = renderOptions(Object.keys(areaLabels), item.area, areaLabels);
+  const priorityOptions = renderOptions(priorities, item.priority);
+  const statusOptions = renderOptions(taskStatuses, item.status, {
+    inbox: "Inbox",
+    backlog: "Backlog",
+    this_week: "This week",
+    today: "Today",
+    done: "Done"
+  });
+  return `<section class="task-inspector-card" data-task-id="${escapeHtml(item.id)}">
+    <div class="task-inspector-title">
+      <span class="pill">Task</span>
+      <input data-task-field="title" value="${escapeHtml(item.title)}" aria-label="Название задачи" />
+    </div>
+    <div class="task-property-grid">
+      <label><span>Статус</span><select data-task-field="status">${statusOptions}</select></label>
+      <label><span>Область</span><select data-task-field="area">${areaOptions}</select></label>
+      <label><span>Связь</span><select data-task-field="link">${renderTaskLinkOptions(item)}</select></label>
+      <label><span>Приоритет</span><select data-task-field="priority">${priorityOptions}</select></label>
+      <label><span>Длительность</span><input data-task-field="estimate" type="number" min="5" step="5" value="${escapeHtml(item.estimate)}" /></label>
+      <label><span>Дата</span><input data-task-field="dueDate" type="date" value="${escapeHtml(item.dueDate || "")}" /></label>
+      <label class="wide"><span>Теги</span><input data-task-field="tags" value="${escapeHtml((item.tags || []).join(", "))}" placeholder="focus, job, admin" /></label>
+    </div>
+    <div class="task-inspector-meta">
+      ${renderCategoryChip(category)}
+      <span class="tag">${escapeHtml(item.priority)}</span>
+      <span class="tag">${escapeHtml(item.estimate)} мин</span>
+      ${item.dueDate ? `<span class="tag">${escapeHtml(item.dueDate)}</span>` : ""}
+    </div>
+  </section>
+  ${renderFocusCompanion(item)}`;
+}
+
 function renderAppInspector(activeView) {
   const mode = document.querySelector("#inspectorMode");
   const root = document.querySelector("#appInspectorContent");
   if (!root) return;
+
+  const selectedTask = getSelectedTask();
+  if (selectedTask) {
+    mode.textContent = "task detail";
+    root.innerHTML = renderTaskInspector(selectedTask);
+    return;
+  }
 
   if (activeView === "today") {
     const blocks = (state.dailyPlan.timeBlocks || []).map((block, index) => ({ ...block, index }));
@@ -1113,13 +1294,8 @@ function renderAppInspector(activeView) {
     </section>
     <section class="inspector-decision-list">
       <article class="inspector-decision">
-        <strong>ИИ предлагает</strong>
-        <p>Держать главный блок до вечера: поиск работы не должен конкурировать с усталостью.</p>
-        <div class="inspector-actions"><button type="button">принять</button><button type="button">изменить</button></div>
-      </article>
-      <article class="inspector-decision">
         <strong>Открыто сегодня</strong>
-        <p>${openTasks.length} задач в Today. Каждая задача должна принадлежать проекту, рутине или админ-блоку — без свободных цветных тегов.</p>
+        <p>${openTasks.length} задач в Today. Выбери любую задачу, чтобы открыть параметры, pomodoro и sound stream.</p>
       </article>
     </section>`;
     return;
@@ -1134,7 +1310,7 @@ function renderAppInspector(activeView) {
       <p>${escapeHtml(reviewItem?.text || "Сырой текст должен стать задачей, заметкой, проектом или вопросом на подтверждение.")}</p>
     </section>
     <section class="inspector-decision-list">
-      <article class="inspector-decision"><strong>Следующее действие</strong><p>Выбери объект, который ассистент должен создать или уточнить.</p><div class="inspector-actions"><button type="button">задача</button><button type="button">заметка</button><button type="button">вопрос</button></div></article>
+      <article class="inspector-decision"><strong>Следующее действие</strong><p>Отправь текст в AI Inbox или выбери входящее, чтобы увидеть интерпретацию.</p></article>
     </section>`;
     return;
   }
@@ -1162,7 +1338,7 @@ function renderAppInspector(activeView) {
   root.innerHTML = `<section class="inspector-object-card">
     <span class="pill">Object inspector</span>
     <h2>${escapeHtml(viewTitle(activeView))}</h2>
-    <p>Правая часть не пустует: здесь будет выбранный объект, решение ИИ или контекст текущего экрана.</p>
+    <p>Выбери задачу в списке, доске или поиске — здесь откроются параметры, таймер и звук.</p>
   </section>
   <section class="inspector-decision-list">
     ${activeTasks.map((item) => `<article class="inspector-decision"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(areaLabels[item.area] || item.area)} · ${escapeHtml(item.priority)}</p></article>`).join("") || `<article class="inspector-decision"><strong>Нет активного объекта</strong><p>Выбери задачу или входящее, чтобы открыть инспектор.</p></article>`}
@@ -1387,18 +1563,39 @@ function renderHabits() {
   const score = state.habits.length ? Math.round((doneHabits / state.habits.length) * 100) : 0;
   ritualScore.textContent = `${score}%`;
   habitList.innerHTML = state.habits.length
-    ? state.habits.map((item) => {
-        const done = Boolean(item.completions?.[todayIso]);
-        return `<article class="habit-item" data-habit-id="${item.id}">
-          <button class="habit-check ${done ? "done" : ""}" data-action="toggle-habit" title="Отметить ритуал"></button>
-          <div>
-            <div class="task-title">${escapeHtml(item.title)}</div>
-            <div class="task-meta"><span class="tag">${areaLabels[item.area]}</span><span class="tag">${item.streak} дней</span></div>
-          </div>
-          <span class="habit-streak">${done ? "done" : "today"}</span>
-        </article>`;
-      }).join("")
+    ? habitGroups
+        .map((group) => {
+          const habits = state.habits.filter((item) => item.group === group);
+          if (!habits.length) return "";
+          return `<section class="habit-group">
+            <div class="habit-group-head"><span>${escapeHtml(habitGroupLabels[group])}</span><strong>${habits.length}</strong></div>
+            ${habits.map(renderHabitItem).join("")}
+          </section>`;
+        })
+        .join("")
     : `<div class="empty">Ритуалов нет</div>`;
+}
+
+function lastSevenDates() {
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(Date.now() - (6 - index) * dayMs);
+    return date.toISOString().slice(0, 10);
+  });
+}
+
+function renderHabitItem(item) {
+  const done = Boolean(item.completions?.[todayIso]);
+  const dots = lastSevenDates()
+    .map((date) => `<span class="habit-dot ${item.completions?.[date] ? "done" : ""} ${date === todayIso ? "today" : ""}" title="${escapeHtml(date)}"></span>`)
+    .join("");
+  return `<article class="habit-item" data-habit-id="${escapeHtml(item.id)}">
+    <button class="habit-check ${done ? "done" : ""}" data-action="toggle-habit" title="Отметить привычку"></button>
+    <div>
+      <div class="task-title">${escapeHtml(item.title)}</div>
+      <div class="task-meta"><span class="tag">${areaLabels[item.area] || item.area}</span><span class="tag">${item.streak} дней</span></div>
+    </div>
+    <div class="habit-week">${dots}</div>
+  </article>`;
 }
 
 function renderTimeBlock(item) {
@@ -1472,7 +1669,7 @@ function getBlockStatusClass(status) {
 function renderTask(item) {
   const area = areaLabels[item.area] || item.area;
   const category = categoryForTask(item);
-  return `<article class="task-item" data-task-id="${item.id}">
+  return `<article class="task-item ${state.ui?.selectedTaskId === item.id ? "selected" : ""}" data-task-id="${item.id}" data-action="select-task">
     <button class="task-toggle ${item.status === "done" ? "done" : ""}" title="Готово" data-action="toggle"></button>
     <div>
       <div class="task-title">${escapeHtml(item.title)}</div>
@@ -1490,7 +1687,7 @@ function renderTask(item) {
 
 function renderTaskCompact(item) {
   const category = categoryForTask(item);
-  return `<article class="task-item compact-task" data-task-id="${item.id}">
+  return `<article class="task-item compact-task ${state.ui?.selectedTaskId === item.id ? "selected" : ""}" data-task-id="${item.id}" data-action="select-task">
     <button class="task-toggle ${item.status === "done" ? "done" : ""}" title="Готово" data-action="toggle"></button>
     <div>
       <div class="task-title">${escapeHtml(item.title)}</div>
@@ -1666,7 +1863,7 @@ function renderBoard() {
 
 function renderBoardCard(item) {
   const projectItem = state.projects.find((project) => project.id === item.projectId);
-  return `<article class="board-card ${item.status === "done" ? "is-done" : ""}" data-task-id="${item.id}">
+  return `<article class="board-card ${item.status === "done" ? "is-done" : ""} ${state.ui?.selectedTaskId === item.id ? "selected" : ""}" data-task-id="${item.id}" data-action="select-task">
     <button class="task-toggle ${item.status === "done" ? "done" : ""}" title="Готово" data-action="toggle"></button>
     <div class="board-card-main">
       <strong>${escapeHtml(item.title)}</strong>
@@ -1698,6 +1895,235 @@ function statusLabel(status) {
     today: "today",
     done: "done"
   }[status] || status;
+}
+
+function selectTask(taskId, view = null) {
+  const item = state.tasks.find((candidate) => candidate.id === taskId);
+  if (!item) return false;
+  state.ui = state.ui || {};
+  state.ui.selectedTaskId = item.id;
+  state.focus = state.focus || structuredClone(seedState.focus);
+  state.focus.selectedTaskId = item.id;
+  if (view) state.settings.activeView = view;
+  return true;
+}
+
+function updateTaskField(item, field, value) {
+  if (!item) return;
+  if (field === "title") item.title = String(value || "").trim() || item.title;
+  if (field === "status" && taskStatuses.includes(value)) {
+    if (value !== "done") item.previousStatus = value;
+    if (item.status !== "done" && value === "done") item.previousStatus = item.status;
+    item.status = value;
+  }
+  if (field === "area" && areaLabels[value]) item.area = value;
+  if (field === "priority" && priorities.includes(value)) item.priority = value;
+  if (field === "estimate") item.estimate = Math.max(5, Math.min(480, Number(value) || 30));
+  if (field === "dueDate") item.dueDate = value || "";
+  if (field === "tags") {
+    item.tags = String(value || "")
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean)
+      .slice(0, 8);
+  }
+  if (field === "link") {
+    item.projectId = null;
+    item.routineId = null;
+    const [kind, id] = String(value || "").split(":");
+    if (kind === "project" && state.projects.some((projectItem) => projectItem.id === id)) item.projectId = id;
+    if (kind === "routine" && state.routines.some((routineItem) => routineItem.id === id)) item.routineId = id;
+  }
+  item.updatedAt = new Date().toISOString();
+}
+
+function addTaskToToday(title) {
+  const newTask = task(title.trim(), "today", "personal", "medium", 30);
+  state.tasks.unshift(newTask);
+  selectTask(newTask.id);
+  state.assistantActions.unshift(action("Задача добавлена", newTask.title, "confirmed"));
+}
+
+function addHabitFromForm(title, area, group) {
+  const newHabit = habit(title.trim(), area, 0);
+  newHabit.group = habitGroups.includes(group) ? group : "anytime";
+  state.habits.push(newHabit);
+  state.assistantActions.unshift(action("Привычка добавлена", newHabit.title, "confirmed"));
+}
+
+function setFocusMode(mode) {
+  if (!focusModes[mode]) return;
+  state.focus.timerMode = mode;
+  state.focus.remainingSeconds = focusModes[mode].seconds;
+  state.focus.running = false;
+  stopFocusTimer();
+}
+
+function updateFocusTimerDisplay() {
+  const timer = document.querySelector("#focusTimerValue");
+  if (timer) timer.textContent = formatSeconds(state.focus.remainingSeconds);
+}
+
+function stopFocusTimer() {
+  if (focusRuntime.timerId) window.clearInterval(focusRuntime.timerId);
+  focusRuntime.timerId = null;
+  focusRuntime.startedAt = null;
+}
+
+function startFocusTimer() {
+  const taskItem = getSelectedTask();
+  if (!taskItem) return;
+  state.focus.selectedTaskId = taskItem.id;
+  state.focus.running = true;
+  focusRuntime.startedAt = new Date();
+  stopFocusTimer();
+  focusRuntime.timerId = window.setInterval(() => {
+    state.focus.remainingSeconds = Math.max(0, state.focus.remainingSeconds - 1);
+    updateFocusTimerDisplay();
+    if (state.focus.remainingSeconds <= 0) completeFocusSession();
+  }, 1000);
+  saveState();
+}
+
+function pauseFocusTimer() {
+  state.focus.running = false;
+  stopFocusTimer();
+  saveState();
+}
+
+function resetFocusTimer() {
+  state.focus.running = false;
+  state.focus.remainingSeconds = focusModes[state.focus.timerMode]?.seconds || focusModes.focus.seconds;
+  stopFocusTimer();
+  saveState();
+}
+
+function completeFocusSession() {
+  const taskItem = state.tasks.find((item) => item.id === state.focus.selectedTaskId);
+  const endedAt = new Date();
+  const startedAt = focusRuntime.startedAt || new Date(endedAt.getTime() - (focusModes[state.focus.timerMode]?.seconds || 0) * 1000);
+  const durationMinutes = Math.max(1, Math.round((endedAt - startedAt) / 60000));
+  state.focusSessions.unshift({
+    id: crypto.randomUUID(),
+    taskId: taskItem?.id || null,
+    startedAt: startedAt.toISOString(),
+    endedAt: endedAt.toISOString(),
+    durationMinutes,
+    soundCategory: state.focus.soundCategory
+  });
+  state.assistantActions.unshift(action(
+    "Фокус-сессия завершена",
+    `${taskItem?.title || "Без задачи"} · ${durationMinutes} мин · ${soundCategories[state.focus.soundCategory]}.`,
+    "confirmed"
+  ));
+  state.focus.running = false;
+  state.focus.remainingSeconds = focusModes[state.focus.timerMode]?.seconds || focusModes.focus.seconds;
+  stopFocusTimer();
+  saveState();
+}
+
+function createNoiseBuffer(audioContext, category) {
+  const sampleRate = audioContext.sampleRate;
+  const length = sampleRate * 2;
+  const buffer = audioContext.createBuffer(2, length, sampleRate);
+  const toneMap = {
+    deep_work: [82, 164],
+    calm_focus: [110, 220],
+    coding: [132, 264],
+    reading: [98, 196],
+    rain: [0, 0],
+    brown_noise: [0, 0]
+  };
+  const [base, harmonic] = toneMap[category] || toneMap.deep_work;
+
+  for (let channel = 0; channel < 2; channel += 1) {
+    const data = buffer.getChannelData(channel);
+    let brown = 0;
+    for (let index = 0; index < length; index += 1) {
+      const t = index / sampleRate;
+      brown = (brown + (Math.random() * 2 - 1) * 0.02) / 1.02;
+      const rain = (Math.random() * 2 - 1) * 0.08;
+      const tone = base ? Math.sin(2 * Math.PI * base * t) * 0.035 + Math.sin(2 * Math.PI * harmonic * t) * 0.018 : 0;
+      data[index] = category === "rain" ? rain : category === "brown_noise" ? brown * 3.5 : brown * 1.2 + tone;
+    }
+  }
+  return buffer;
+}
+
+async function playFocusSound() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+  stopFocusSound();
+  focusRuntime.audioContext = focusRuntime.audioContext || new AudioContextClass();
+  if (focusRuntime.audioContext.state === "suspended") await focusRuntime.audioContext.resume();
+  const source = focusRuntime.audioContext.createBufferSource();
+  const gain = focusRuntime.audioContext.createGain();
+  source.buffer = createNoiseBuffer(focusRuntime.audioContext, state.focus.soundCategory);
+  source.loop = true;
+  gain.gain.value = state.focus.volume;
+  source.connect(gain);
+  gain.connect(focusRuntime.audioContext.destination);
+  source.start();
+  focusRuntime.source = source;
+  focusRuntime.gain = gain;
+  focusRuntime.isSoundPlaying = true;
+  render();
+}
+
+function stopFocusSound() {
+  if (focusRuntime.source) {
+    try {
+      focusRuntime.source.stop();
+    } catch {
+      // Source can already be stopped after category changes.
+    }
+    focusRuntime.source.disconnect();
+  }
+  focusRuntime.source = null;
+  focusRuntime.gain = null;
+  focusRuntime.isSoundPlaying = false;
+}
+
+function updateFocusVolume(value) {
+  state.focus.volume = Math.max(0, Math.min(1, Number(value) || 0));
+  if (focusRuntime.gain) focusRuntime.gain.gain.value = state.focus.volume;
+}
+
+function searchDailyOs(query) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+  const results = [];
+  state.tasks.forEach((item) => {
+    if (`${item.title} ${(item.tags || []).join(" ")}`.toLowerCase().includes(needle)) {
+      results.push({ type: "task", id: item.id, title: item.title, detail: `${statusLabel(item.status)} · ${areaLabels[item.area] || item.area}` });
+    }
+  });
+  state.projects.forEach((item) => {
+    if (`${item.title} ${item.stageReason}`.toLowerCase().includes(needle)) {
+      results.push({ type: "project", id: item.id, title: item.title, detail: `Проект · ${stageLabel(item.journeyStage)}` });
+    }
+  });
+  state.inboxItems.forEach((item) => {
+    if (`${item.text} ${item.parsed?.title || ""}`.toLowerCase().includes(needle)) {
+      results.push({ type: "inbox", id: item.id, title: item.parsed?.title || item.text, detail: "Inbox" });
+    }
+  });
+  state.notes.forEach((item) => {
+    if (String(item.text || "").toLowerCase().includes(needle)) {
+      results.push({ type: "note", id: item.id, title: item.text.slice(0, 72), detail: `Заметка · ${areaLabels[item.area] || item.area}` });
+    }
+  });
+  return results.slice(0, 8);
+}
+
+function renderSearchResults(query) {
+  const root = document.querySelector("#searchResults");
+  if (!root) return;
+  const results = searchDailyOs(query);
+  root.hidden = !query.trim();
+  root.innerHTML = results.length
+    ? results.map((item) => `<button type="button" class="search-result" data-search-type="${escapeHtml(item.type)}" data-search-id="${escapeHtml(item.id)}"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.detail)}</span></button>`).join("")
+    : `<div class="search-empty">Ничего не найдено</div>`;
 }
 
 function escapeHtml(value) {
@@ -1794,21 +2220,52 @@ document.body.addEventListener("click", (event) => {
   }
 
   const toggle = event.target.closest('[data-action="toggle"]');
-  if (!toggle) return;
-  const taskItem = toggle.closest("[data-task-id]");
-  const item = state.tasks.find((candidate) => candidate.id === taskItem.dataset.taskId);
-  if (!item) return;
-  item.status = item.status === "done" ? "today" : "done";
-  item.updatedAt = new Date().toISOString();
-  state.assistantActions.unshift(action(item.status === "done" ? "Задача закрыта" : "Задача возвращена", item.title, "confirmed"));
+  if (toggle) {
+    const taskItem = toggle.closest("[data-task-id]");
+    const item = state.tasks.find((candidate) => candidate.id === taskItem.dataset.taskId);
+    if (!item) return;
+    if (item.status === "done") {
+      item.status = item.previousStatus || "today";
+      state.assistantActions.unshift(action("Задача возвращена", item.title, "confirmed"));
+    } else {
+      item.previousStatus = item.status;
+      item.status = "done";
+      state.assistantActions.unshift(action("Задача закрыта", item.title, "confirmed"));
+    }
+    item.updatedAt = new Date().toISOString();
+    selectTask(item.id);
+    saveState();
+    return;
+  }
+
+  const taskRow = event.target.closest('[data-action="select-task"]');
+  if (taskRow) {
+    if (selectTask(taskRow.dataset.taskId)) saveState();
+    return;
+  }
+});
+
+document.querySelector("#quickTaskForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const input = document.querySelector("#quickTaskTitle");
+  const title = input.value.trim();
+  if (!title) return;
+  input.value = "";
+  addTaskToToday(title);
   saveState();
 });
 
-document.querySelector("#addTask").addEventListener("click", () => {
-  const title = prompt("Новая задача на сегодня");
-  if (!title?.trim()) return;
-  state.tasks.unshift(task(title.trim(), "today", "personal", "medium", 30));
-  state.assistantActions.unshift(action("Задача добавлена", title.trim(), "confirmed"));
+document.querySelector("#addHabitToggle").addEventListener("click", () => {
+  document.querySelector("#habitComposer")?.classList.toggle("is-hidden");
+});
+
+document.querySelector("#habitComposer").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const title = document.querySelector("#habitTitle").value.trim();
+  if (!title) return;
+  addHabitFromForm(title, document.querySelector("#habitArea").value, document.querySelector("#habitGroup").value);
+  document.querySelector("#habitTitle").value = "";
+  document.querySelector("#habitComposer").classList.add("is-hidden");
   saveState();
 });
 
@@ -1897,6 +2354,105 @@ document.querySelector("#runAutopilot").addEventListener("click", () => {
     state.assistantActions.unshift(action("Лог обновлён", "Актуальный audit trail пересобран без изменения объектов.", "confirmed"));
   }
   saveState();
+});
+
+document.querySelector("#appInspectorContent").addEventListener("change", async (event) => {
+  const taskField = event.target.closest("[data-task-field]");
+  if (taskField) {
+    const taskRoot = taskField.closest("[data-task-id]");
+    const item = state.tasks.find((candidate) => candidate.id === taskRoot?.dataset.taskId);
+    updateTaskField(item, taskField.dataset.taskField, taskField.value);
+    state.assistantActions.unshift(action("Задача обновлена", item?.title || "Параметры задачи изменены.", "confirmed"));
+    saveState();
+    return;
+  }
+
+  const focusField = event.target.closest("[data-focus-field]");
+  if (focusField) {
+    if (focusField.dataset.focusField === "soundCategory") {
+      state.focus.soundCategory = focusField.value;
+      if (focusRuntime.isSoundPlaying) await playFocusSound();
+    }
+    if (focusField.dataset.focusField === "volume") updateFocusVolume(focusField.value);
+    saveState();
+  }
+});
+
+document.querySelector("#appInspectorContent").addEventListener("keydown", (event) => {
+  const taskField = event.target.closest("[data-task-field]");
+  if (!taskField || event.key !== "Enter" || event.target.tagName === "TEXTAREA") return;
+  event.preventDefault();
+  taskField.blur();
+});
+
+document.querySelector("#appInspectorContent").addEventListener("click", async (event) => {
+  const modeButton = event.target.closest("[data-focus-mode]");
+  if (modeButton) {
+    setFocusMode(modeButton.dataset.focusMode);
+    saveState();
+    return;
+  }
+
+  const focusAction = event.target.closest("[data-focus-action]");
+  if (focusAction) {
+    const actionType = focusAction.dataset.focusAction;
+    if (actionType === "bind-task") {
+      const taskRoot = focusAction.closest("[data-task-id]");
+      if (selectTask(taskRoot?.dataset.taskId)) saveState();
+    }
+    if (actionType === "start") startFocusTimer();
+    if (actionType === "pause") pauseFocusTimer();
+    if (actionType === "reset") resetFocusTimer();
+    return;
+  }
+
+  const soundAction = event.target.closest("[data-sound-action]");
+  if (soundAction) {
+    if (soundAction.dataset.soundAction === "play") await playFocusSound();
+    else {
+      stopFocusSound();
+      render();
+    }
+  }
+});
+
+document.querySelector("#globalSearch").addEventListener("input", (event) => {
+  renderSearchResults(event.target.value);
+});
+
+document.querySelector("#searchResults").addEventListener("click", (event) => {
+  const item = event.target.closest("[data-search-type]");
+  if (!item) return;
+  const type = item.dataset.searchType;
+  const id = item.dataset.searchId;
+  if (type === "task") selectTask(id, "today");
+  if (type === "project") {
+    state.selectedProjectId = id;
+    state.settings.activeView = "projects";
+  }
+  if (type === "inbox") {
+    state.ui.selectedInboxId = id;
+    state.settings.activeView = "inbox";
+  }
+  if (type === "note") {
+    state.settings.activeView = "log";
+  }
+  document.querySelector("#globalSearch").value = "";
+  renderSearchResults("");
+  saveState();
+});
+
+document.addEventListener("keydown", (event) => {
+  const target = event.target;
+  const isTyping = ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+  if ((event.key === "/" && !isTyping) || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k")) {
+    event.preventDefault();
+    document.querySelector("#globalSearch")?.focus();
+  }
+  if (event.key === "Escape") {
+    document.querySelector("#globalSearch").value = "";
+    renderSearchResults("");
+  }
 });
 
 document.querySelector("#resetDemo").addEventListener("click", () => {

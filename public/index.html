@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#ffffff" />
     <title>Second Brain</title>
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/styles.css?v=70" />
+    <link rel="stylesheet" href="/styles.css?v=71" />
   </head>
   <body data-auth="checking">
     <section class="auth-gate" id="authGate" aria-label="Вход в Daily OS">
@@ -83,10 +83,14 @@
             <p class="page-subtitle">Фокус, ритуалы и операционка дня в одном спокойном месте.</p>
           </div>
           <div class="topbar-actions">
+            <div class="global-search" id="globalSearchBox">
+              <input id="globalSearch" type="search" autocomplete="off" placeholder="Поиск /" aria-label="Поиск по Daily OS" />
+              <div class="search-results" id="searchResults" hidden></div>
+            </div>
             <span class="sync-status" id="authStatus">local</span>
             <button class="secondary-button" id="authButton" type="button">GitHub вход</button>
             <button class="secondary-button is-hidden" id="signOutButton" type="button">Выйти</button>
-            <button class="icon-button" id="resetDemo" title="Сбросить демо-данные">↺</button>
+            <button class="icon-button debug-only" id="resetDemo" title="Сбросить демо-данные">↺</button>
             <button class="primary-button" id="runAutopilot">Проверить план</button>
           </div>
         </header>
@@ -156,8 +160,28 @@
             <section class="today-ritual-strip" aria-label="Ритуалы дня">
               <div class="ritual-strip-head">
                 <span class="label">Ритуалы</span>
-                <strong id="ritualScore">0%</strong>
+                <div class="ritual-actions">
+                  <strong id="ritualScore">0%</strong>
+                  <button class="text-button" id="addHabitToggle" type="button">+ habit</button>
+                </div>
               </div>
+              <form class="habit-composer is-hidden" id="habitComposer">
+                <input id="habitTitle" type="text" placeholder="Новая привычка" />
+                <select id="habitArea" aria-label="Область привычки">
+                  <option value="personal">личное</option>
+                  <option value="health">здоровье</option>
+                  <option value="work">работа</option>
+                  <option value="learning">обучение</option>
+                  <option value="admin">админ</option>
+                </select>
+                <select id="habitGroup" aria-label="Время привычки">
+                  <option value="morning">morning</option>
+                  <option value="afternoon">afternoon</option>
+                  <option value="night">night</option>
+                  <option value="anytime">anytime</option>
+                </select>
+                <button class="secondary-button" type="submit">Добавить</button>
+              </form>
               <div class="habit-list" id="habitList"></div>
             </section>
 
@@ -170,7 +194,10 @@
                 <div class="day-block-list" id="dayBlockList"></div>
                 <section class="unscheduled-lane" aria-label="Задачи без блока">
                   <div class="table-footer">
-                    <button class="ghost-row-button" id="addTask" type="button">+ Добавить задачу</button>
+                    <form class="task-composer" id="quickTaskForm">
+                      <input id="quickTaskTitle" type="text" placeholder="+ Добавить задачу в Today" />
+                      <button class="secondary-button" type="submit">Добавить</button>
+                    </form>
                   </div>
                   <div class="task-list tracker-list" id="todayTasks"></div>
                 </section>
@@ -267,6 +294,6 @@
       </aside>
     </div>
 
-    <script src="/app.js?v=70" type="module"></script>
+    <script src="/app.js?v=71" type="module"></script>
   </body>
 </html>
