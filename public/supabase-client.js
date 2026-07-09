@@ -47,11 +47,13 @@ export async function getAuthSession() {
 export async function signInWithGithub() {
   const supabase = await getSupabaseClient();
   if (!supabase) throw new Error("Supabase is not configured");
+  const config = await getAppConfig();
+  const redirectTo = config.appUrl || window.location.origin;
 
   const { error } = await supabase.auth.signInWithOAuth({
     provider: "github",
     options: {
-      redirectTo: window.location.origin
+      redirectTo
     }
   });
   if (error) throw error;
