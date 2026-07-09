@@ -467,6 +467,17 @@ function authLabel(session) {
   return meta.user_name || meta.preferred_username || session?.user?.email || "GitHub";
 }
 
+function friendlySyncError(message) {
+  const text = String(message || "");
+  if (/daily_os_states|relation .* does not exist|schema cache|PGRST205|PGRST116/i.test(text)) {
+    return "Нужно один раз запустить SQL из db/supabase-state-sync.sql в Supabase SQL Editor.";
+  }
+  if (/row-level security|permission denied|violates row-level security|42501/i.test(text)) {
+    return "Supabase подключён, но RLS-политики не дают сохранить данные. Перезапусти db/supabase-state-sync.sql.";
+  }
+  return text || "Cloud sync failed";
+}
+
 function updateAuthUi() {
   const status = document.querySelector("#authStatus");
   const authButton = document.querySelector("#authButton");
@@ -495,11 +506,12 @@ function updateAuthUi() {
   }
 
   if (cloudSync.error) {
+    const friendlyError = friendlySyncError(cloudSync.error);
     document.body.dataset.auth = cloudSync.session ? "signed-in" : "signed-out";
-    status.textContent = "sync error";
-    status.title = cloudSync.error;
+    status.textContent = cloudSync.session ? "setup needed" : "auth error";
+    status.title = friendlyError;
     gateButton.textContent = "Повторить вход через GitHub";
-    gateStatus.textContent = cloudSync.error;
+    gateStatus.textContent = friendlyError;
     return;
   }
 
@@ -554,7 +566,7 @@ async function hydrateCloudState(session) {
     cloudSync.status = "synced";
     updateAuthUi();
   } catch (error) {
-    cloudSync.error = error instanceof Error ? error.message : "Cloud sync failed";
+    cloudSync.error = friendlySyncError(error instanceof Error ? error.message : "Cloud sync failed");
     updateAuthUi();
   }
 }
@@ -570,7 +582,7 @@ function queueCloudSave() {
       cloudSync.status = "synced";
       cloudSync.error = "";
     } catch (error) {
-      cloudSync.error = error instanceof Error ? error.message : "Cloud sync failed";
+      cloudSync.error = friendlySyncError(error instanceof Error ? error.message : "Cloud sync failed");
     }
     updateAuthUi();
   }, 600);
