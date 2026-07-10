@@ -3650,6 +3650,7 @@ body[data-view="projects"] .projects-layout {
 :root {
   --rail: 72px;
   --inspector-width: 360px;
+  --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --app-bg: #f7f7f4;
   --surface: #ffffff;
   --surface-subtle: #fbfbf8;
@@ -4209,5 +4210,103 @@ body[data-inspector="off"] .app-inspector {
 
   .board {
     grid-template-columns: minmax(220px, 1fr);
+  }
+}
+
+/* v75: fix broken icon rail and reduce empty Log canvas. */
+.sidebar .brand {
+  display: none !important;
+}
+
+.sidebar {
+  align-content: start !important;
+  justify-items: center !important;
+  grid-template-rows: 1fr !important;
+  padding-top: 16px !important;
+}
+
+.nav-tabs {
+  align-content: start !important;
+  justify-items: center !important;
+}
+
+.nav-button,
+.nav-button:where(:not(.active)) {
+  display: grid !important;
+  place-items: center !important;
+  width: 46px !important;
+  height: 46px !important;
+  min-width: 46px !important;
+  min-height: 46px !important;
+  padding: 0 !important;
+  border-radius: 14px !important;
+  font-size: 14px !important;
+  line-height: 1 !important;
+}
+
+.nav-icon {
+  display: grid !important;
+  place-items: center !important;
+  position: static !important;
+  width: 22px !important;
+  height: 22px !important;
+  color: currentColor !important;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  font-size: 18px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+  opacity: 1 !important;
+}
+
+.nav-button.active {
+  background: #111827 !important;
+  border-color: #111827 !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.nav-button:hover {
+  background: #f3f6fb !important;
+  color: #111827 !important;
+}
+
+body[data-view="log"] .view.active {
+  max-width: 980px;
+}
+
+body[data-view="log"] .panel {
+  padding: 16px;
+}
+
+body[data-view="log"] .action-log-list {
+  gap: 0;
+}
+
+body[data-view="log"] .action-log-list .action-item {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  min-height: 58px;
+  padding: 10px 12px;
+  background: transparent;
+}
+
+@media (max-width: 860px) {
+  .sidebar .brand {
+    display: none !important;
+  }
+
+  .sidebar {
+    justify-items: start !important;
+    padding-top: 8px !important;
+  }
+
+  .nav-button,
+  .nav-button:where(:not(.active)) {
+    width: 42px !important;
+    height: 42px !important;
+    min-width: 42px !important;
+    min-height: 42px !important;
   }
 }
