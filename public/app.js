@@ -1206,6 +1206,27 @@ function renderTaskLinkOptions(item) {
   return `<option value="none" ${current === "none" ? "selected" : ""}>Без привязки</option>${projects}${routines}`;
 }
 
+function addDaysIso(days) {
+  return new Date(Date.now() + days * dayMs).toISOString().slice(0, 10);
+}
+
+function taskDuePresetValue(item) {
+  if (!item.dueDate) return "";
+  if (item.dueDate === todayIso) return todayIso;
+  if (item.dueDate === addDaysIso(1)) return addDaysIso(1);
+  if (item.dueDate === addDaysIso(7)) return addDaysIso(7);
+  return item.dueDate;
+}
+
+function renderOptionChips(field, options, current, labels = {}) {
+  return options.map((value) => `<button
+    class="option-chip ${String(current) === String(value) ? "active" : ""}"
+    type="button"
+    data-task-option="${escapeHtml(field)}"
+    data-value="${escapeHtml(value)}"
+  >${escapeHtml(labels[value] || value)}</button>`).join("");
+}
+
 function formatSeconds(seconds) {
   const safe = Math.max(0, Math.floor(Number(seconds) || 0));
   const minutes = Math.floor(safe / 60);
@@ -1254,28 +1275,54 @@ function renderFocusCompanion(item) {
 
 function renderTaskInspector(item) {
   const category = categoryForTask(item);
-  const areaOptions = renderOptions(Object.keys(areaLabels), item.area, areaLabels);
-  const priorityOptions = renderOptions(priorities, item.priority);
-  const statusOptions = renderOptions(taskStatuses, item.status, {
+  const statusLabels = {
     inbox: "Inbox",
     backlog: "Backlog",
     this_week: "This week",
     today: "Today",
     done: "Done"
-  });
+  };
+  const priorityLabels = { low: "Low", medium: "Medium", high: "High" };
+  const estimateOptions = [15, 25, 30, 45, 60];
+  const dueOptions = ["", todayIso, addDaysIso(1), addDaysIso(7)];
+  const dueLabels = { "": "No date", [todayIso]: "Today", [addDaysIso(1)]: "Tomorrow", [addDaysIso(7)]: "Next week" };
+  const currentDue = taskDuePresetValue(item);
   return `<section class="task-inspector-card" data-task-id="${escapeHtml(item.id)}">
     <div class="task-inspector-title">
       <span class="pill">Task</span>
       <input data-task-field="title" value="${escapeHtml(item.title)}" aria-label="Название задачи" />
     </div>
-    <div class="task-property-grid">
-      <label><span>Статус</span><select data-task-field="status">${statusOptions}</select></label>
-      <label><span>Область</span><select data-task-field="area">${areaOptions}</select></label>
-      <label><span>Связь</span><select data-task-field="link">${renderTaskLinkOptions(item)}</select></label>
-      <label><span>Приоритет</span><select data-task-field="priority">${priorityOptions}</select></label>
-      <label><span>Длительность</span><input data-task-field="estimate" type="number" min="5" step="5" value="${escapeHtml(item.estimate)}" /></label>
-      <label><span>Дата</span><input data-task-field="dueDate" type="date" value="${escapeHtml(item.dueDate || "")}" /></label>
-      <label class="wide"><span>Теги</span><input data-task-field="tags" value="${escapeHtml((item.tags || []).join(", "))}" placeholder="focus, job, admin" /></label>
+    <div class="task-option-stack">
+      <section class="task-option-row">
+        <span>Статус</span>
+        <div class="option-chip-row">${renderOptionChips("status", taskStatuses, item.status, statusLabels)}</div>
+      </section>
+      <section class="task-option-row">
+        <span>Область</span>
+        <div class="option-chip-row">${renderOptionChips("area", Object.keys(areaLabels), item.area, areaLabels)}</div>
+      </section>
+      <section class="task-option-row">
+        <span>Приоритет</span>
+        <div class="option-chip-row priority-options">${renderOptionChips("priority", priorities, item.priority, priorityLabels)}</div>
+      </section>
+      <section class="task-option-row">
+        <span>Дата</span>
+        <div class="option-chip-row">${renderOptionChips("dueDate", dueOptions, currentDue, dueLabels)}</div>
+        <input class="compact-date-input" data-task-field="dueDate" type="date" value="${escapeHtml(item.dueDate || "")}" aria-label="Точная дата" />
+      </section>
+      <section class="task-option-row">
+        <span>Длительность</span>
+        <div class="option-chip-row">${renderOptionChips("estimate", estimateOptions, item.estimate)}</div>
+        <input class="compact-number-input" data-task-field="estimate" type="number" min="5" step="5" value="${escapeHtml(item.estimate)}" aria-label="Длительность в минутах" />
+      </section>
+      <section class="task-option-row">
+        <span>Связь</span>
+        <select class="compact-link-select" data-task-field="link">${renderTaskLinkOptions(item)}</select>
+      </section>
+      <section class="task-option-row">
+        <span>Теги</span>
+        <input class="compact-tags-input" data-task-field="tags" value="${escapeHtml((item.tags || []).join(", "))}" placeholder="focus, job, admin" />
+      </section>
     </div>
     <div class="task-inspector-meta">
       ${renderCategoryChip(category)}
@@ -2211,27 +2258,39 @@ function completeFocusSession() {
 
 function createNoiseBuffer(audioContext, category) {
   const sampleRate = audioContext.sampleRate;
-  const length = sampleRate * 2;
+  const length = sampleRate * 4;
   const buffer = audioContext.createBuffer(2, length, sampleRate);
-  const toneMap = {
-    deep_work: [82, 164],
-    calm_focus: [110, 220],
-    coding: [132, 264],
-    reading: [98, 196],
-    rain: [0, 0],
-    brown_noise: [0, 0]
-  };
-  const [base, harmonic] = toneMap[category] || toneMap.deep_work;
+  const config = {
+    deep_work: { base: 72, harmonic: 144, noise: 0.18, pulse: 0.08, lowpass: 0.985 },
+    calm_focus: { base: 110, harmonic: 220, noise: 0.08, pulse: 0.025, lowpass: 0.992 },
+    coding: { base: 146.83, harmonic: 293.66, noise: 0.12, pulse: 0.18, lowpass: 0.975 },
+    reading: { base: 92.5, harmonic: 185, noise: 0.055, pulse: 0.012, lowpass: 0.995 },
+    rain: { base: 0, harmonic: 0, noise: 0.55, pulse: 0.34, lowpass: 0.55 },
+    brown_noise: { base: 0, harmonic: 0, noise: 0.42, pulse: 0, lowpass: 0.996 }
+  }[category] || { base: 72, harmonic: 144, noise: 0.18, pulse: 0.08, lowpass: 0.985 };
 
   for (let channel = 0; channel < 2; channel += 1) {
     const data = buffer.getChannelData(channel);
-    let brown = 0;
+    let filtered = 0;
+    let shimmer = 0;
     for (let index = 0; index < length; index += 1) {
       const t = index / sampleRate;
-      brown = (brown + (Math.random() * 2 - 1) * 0.02) / 1.02;
-      const rain = (Math.random() * 2 - 1) * 0.08;
-      const tone = base ? Math.sin(2 * Math.PI * base * t) * 0.035 + Math.sin(2 * Math.PI * harmonic * t) * 0.018 : 0;
-      data[index] = category === "rain" ? rain : category === "brown_noise" ? brown * 3.5 : brown * 1.2 + tone;
+      const white = Math.random() * 2 - 1;
+      filtered = filtered * config.lowpass + white * (1 - config.lowpass);
+      shimmer = shimmer * 0.76 + white * 0.24;
+      const pulse = config.pulse ? (Math.sin(2 * Math.PI * config.pulse * t) + 1) / 2 : 0.5;
+      const tone = config.base
+        ? Math.sin(2 * Math.PI * config.base * t) * 0.045 + Math.sin(2 * Math.PI * config.harmonic * t) * 0.018
+        : 0;
+      const rainDrops = category === "rain" && Math.random() > 0.985 ? (Math.random() * 2 - 1) * 0.22 : 0;
+      const codingTick = category === "coding" && Math.sin(2 * Math.PI * 1.7 * t) > 0.985 ? 0.045 : 0;
+      const breath = category === "calm_focus" || category === "reading"
+        ? 0.82 + Math.sin(2 * Math.PI * (category === "reading" ? 0.035 : 0.055) * t) * 0.12
+        : 1;
+      const noiseLayer = category === "rain"
+        ? shimmer * config.noise + rainDrops
+        : filtered * config.noise * (0.72 + pulse * 0.42);
+      data[index] = Math.max(-0.8, Math.min(0.8, (noiseLayer + tone + codingTick) * breath));
     }
   }
   return buffer;
@@ -2592,6 +2651,16 @@ document.querySelector("#appInspectorContent").addEventListener("keydown", (even
 });
 
 document.querySelector("#appInspectorContent").addEventListener("click", async (event) => {
+  const taskOption = event.target.closest("[data-task-option]");
+  if (taskOption) {
+    const taskRoot = taskOption.closest("[data-task-id]");
+    const item = state.tasks.find((candidate) => candidate.id === taskRoot?.dataset.taskId);
+    updateTaskField(item, taskOption.dataset.taskOption, taskOption.dataset.value);
+    state.assistantActions.unshift(action("Задача обновлена", item?.title || "Параметры задачи изменены.", "confirmed"));
+    saveState();
+    return;
+  }
+
   const modeButton = event.target.closest("[data-focus-mode]");
   if (modeButton) {
     setFocusMode(modeButton.dataset.focusMode);

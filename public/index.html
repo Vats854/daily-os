@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#ffffff" />
     <title>Second Brain</title>
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/styles.css?v=75" />
+    <link rel="stylesheet" href="/styles.css?v=77" />
   </head>
   <body data-auth="checking">
     <section class="auth-gate" id="authGate" aria-label="Вход в Daily OS">
@@ -75,26 +75,26 @@
         </section>
       </aside>
 
-      <main class="workspace">
-        <header class="topbar">
-          <div>
-            <p class="eyebrow" id="todayDate"></p>
-            <h1 id="viewTitle">Сегодня</h1>
-            <p class="page-subtitle">Фокус, ритуалы и операционка дня в одном спокойном месте.</p>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="todayDate"></p>
+          <h1 id="viewTitle">Сегодня</h1>
+          <p class="page-subtitle">Фокус, ритуалы и операционка дня в одном спокойном месте.</p>
+        </div>
+        <div class="topbar-actions">
+          <div class="global-search" id="globalSearchBox">
+            <input id="globalSearch" type="search" autocomplete="off" placeholder="Поиск /" aria-label="Поиск по Daily OS" />
+            <div class="search-results" id="searchResults" hidden></div>
           </div>
-          <div class="topbar-actions">
-            <div class="global-search" id="globalSearchBox">
-              <input id="globalSearch" type="search" autocomplete="off" placeholder="Поиск /" aria-label="Поиск по Daily OS" />
-              <div class="search-results" id="searchResults" hidden></div>
-            </div>
-            <span class="sync-status" id="authStatus">local</span>
-            <button class="secondary-button" id="authButton" type="button">GitHub вход</button>
-            <button class="secondary-button is-hidden" id="signOutButton" type="button">Выйти</button>
-            <button class="icon-button debug-only" id="resetDemo" title="Сбросить демо-данные">↺</button>
-            <button class="primary-button" id="runAutopilot">Проверить план</button>
-          </div>
-        </header>
+          <span class="sync-status" id="authStatus">local</span>
+          <button class="secondary-button" id="authButton" type="button">GitHub вход</button>
+          <button class="secondary-button is-hidden" id="signOutButton" type="button">Выйти</button>
+          <button class="icon-button debug-only" id="resetDemo" title="Сбросить демо-данные">↺</button>
+          <button class="primary-button" id="runAutopilot">Проверить план</button>
+        </div>
+      </header>
 
+      <main class="workspace">
         <section class="view" id="inboxView" aria-labelledby="viewTitle">
           <div class="inbox-layout">
             <section class="panel">
@@ -294,6 +294,6 @@
       </aside>
     </div>
 
-    <script src="/app.js?v=75" type="module"></script>
+    <script src="/app.js?v=77" type="module"></script>
   </body>
 </html>

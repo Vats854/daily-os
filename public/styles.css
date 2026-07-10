@@ -835,6 +835,100 @@ body {
   }
 }
 
+/* v77: task details as tracker options, not a heavy form. */
+.task-option-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.task-option-row {
+  display: grid;
+  gap: 8px;
+}
+
+.task-option-row > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 820;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.option-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.option-chip {
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 10px;
+  background: #fff;
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1;
+}
+
+.option-chip:hover {
+  border-color: #bfdbfe;
+  background: #f8fbff;
+  color: #111827;
+}
+
+.option-chip.active {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.priority-options .option-chip[data-value="high"].active {
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #b42318;
+}
+
+.priority-options .option-chip[data-value="medium"].active {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a5b13;
+}
+
+.priority-options .option-chip[data-value="low"].active {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.compact-date-input,
+.compact-number-input,
+.compact-link-select,
+.compact-tags-input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0 11px;
+  background: #fff;
+  color: #111827;
+  font-size: 13px;
+}
+
+.compact-date-input,
+.compact-number-input {
+  max-width: 168px;
+}
+
+.compact-tags-input {
+  min-height: 38px;
+}
+
+.task-property-grid {
+  display: none;
+}
+
 /* v28: A+B Today and C Projects */
 .assistant-review {
   display: grid;
@@ -4308,5 +4402,132 @@ body[data-view="log"] .action-log-list .action-item {
     height: 42px !important;
     min-width: 42px !important;
     min-height: 42px !important;
+  }
+}
+
+/* v76: promote topbar to a real app-level toolbar above content and inspector. */
+.app-shell,
+body[data-view="week"] .app-shell,
+body[data-view="projects"] .app-shell,
+body[data-view="board"] .app-shell,
+body[data-view="log"] .app-shell {
+  grid-template-rows: 68px minmax(0, 1fr) !important;
+}
+
+body[data-inspector="off"] .app-shell,
+body[data-inspector="off"][data-view="week"] .app-shell,
+body[data-inspector="off"][data-view="board"] .app-shell,
+body[data-inspector="off"][data-view="log"] .app-shell {
+  grid-template-rows: 68px minmax(0, 1fr) !important;
+}
+
+.sidebar {
+  grid-row: 1 / -1 !important;
+}
+
+.topbar {
+  position: sticky !important;
+  top: 0 !important;
+  grid-column: 2 / -1 !important;
+  grid-row: 1 !important;
+  min-height: 68px !important;
+  height: 68px !important;
+  margin: 0 !important;
+  padding: 10px 28px !important;
+  border-bottom: 1px solid var(--line) !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  box-shadow: none !important;
+}
+
+.topbar h1,
+body[data-view="projects"] .topbar h1,
+body[data-view="week"] .topbar h1,
+body[data-view="board"] .topbar h1 {
+  font-size: 22px !important;
+}
+
+.page-subtitle {
+  margin-top: 3px !important;
+  font-size: 12px !important;
+}
+
+.workspace,
+body[data-view="week"] .workspace,
+body[data-view="projects"] .workspace,
+body[data-view="board"] .workspace,
+body[data-view="log"] .workspace {
+  grid-column: 2 !important;
+  grid-row: 2 !important;
+}
+
+.app-inspector,
+body[data-view="week"] .app-inspector,
+body[data-view="projects"] .app-inspector,
+body[data-view="board"] .app-inspector,
+body[data-view="log"] .app-inspector {
+  top: 68px !important;
+  grid-row: 2 !important;
+  height: calc(100vh - 68px) !important;
+}
+
+.view {
+  padding-top: 22px !important;
+}
+
+@media (max-width: 1180px) {
+  .topbar {
+    grid-column: 2 !important;
+    height: auto !important;
+    min-height: 68px !important;
+  }
+
+  .app-inspector,
+  body[data-view="week"] .app-inspector,
+  body[data-view="projects"] .app-inspector,
+  body[data-view="board"] .app-inspector,
+  body[data-view="log"] .app-inspector {
+    grid-row: 3 !important;
+    height: auto !important;
+  }
+}
+
+@media (max-width: 860px) {
+  .app-shell,
+  body[data-view="week"] .app-shell,
+  body[data-view="projects"] .app-shell,
+  body[data-view="board"] .app-shell,
+  body[data-view="log"] .app-shell,
+  body[data-inspector="off"] .app-shell {
+    grid-template-rows: 60px auto minmax(0, 1fr) !important;
+  }
+
+  .sidebar {
+    grid-row: 1 !important;
+  }
+
+  .topbar {
+    position: sticky !important;
+    top: 60px !important;
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+    padding: 10px 14px !important;
+  }
+
+  .workspace,
+  body[data-view="week"] .workspace,
+  body[data-view="projects"] .workspace,
+  body[data-view="board"] .workspace,
+  body[data-view="log"] .workspace {
+    grid-column: 1 !important;
+    grid-row: 3 !important;
+  }
+
+  .app-inspector,
+  body[data-view="week"] .app-inspector,
+  body[data-view="projects"] .app-inspector,
+  body[data-view="board"] .app-inspector,
+  body[data-view="log"] .app-inspector {
+    grid-column: 1 !important;
+    grid-row: 4 !important;
   }
 }
