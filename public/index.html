@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#ffffff" />
     <title>Second Brain</title>
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/styles.css?v=71" />
+    <link rel="stylesheet" href="/styles.css?v=74" />
   </head>
   <body data-auth="checking">
     <section class="auth-gate" id="authGate" aria-label="Вход в Daily OS">
@@ -38,29 +38,29 @@
           </div>
         </div>
         <nav class="nav-tabs" aria-label="Разделы">
-          <button class="nav-button" data-view="inbox" title="Inbox">
-            <span>↘</span>
-            Inbox
+          <button class="nav-button" data-view="inbox" title="Inbox" aria-label="Inbox">
+            <span class="nav-icon">⌂</span>
+            <span class="nav-label">Inbox</span>
           </button>
-          <button class="nav-button active" data-view="today" title="Сегодня">
-            <span>⌁</span>
-            Сегодня
+          <button class="nav-button active" data-view="today" title="Сегодня" aria-label="Сегодня">
+            <span class="nav-icon">✓</span>
+            <span class="nav-label">Сегодня</span>
           </button>
-          <button class="nav-button" data-view="week" title="Неделя">
-            <span>◇</span>
-            Неделя
+          <button class="nav-button" data-view="week" title="Неделя" aria-label="Неделя">
+            <span class="nav-icon">7</span>
+            <span class="nav-label">Неделя</span>
           </button>
-          <button class="nav-button" data-view="projects" title="Проекты">
-            <span>◌</span>
-            Проекты
+          <button class="nav-button" data-view="projects" title="Проекты" aria-label="Проекты">
+            <span class="nav-icon">○</span>
+            <span class="nav-label">Проекты</span>
           </button>
-          <button class="nav-button" data-view="board" title="Доска">
-            <span>☷</span>
-            Доска
+          <button class="nav-button" data-view="board" title="Доска" aria-label="Доска">
+            <span class="nav-icon">▦</span>
+            <span class="nav-label">Доска</span>
           </button>
-          <button class="nav-button" data-view="log" title="Лог">
-            <span>≡</span>
-            Лог
+          <button class="nav-button" data-view="log" title="Лог" aria-label="Лог">
+            <span class="nav-icon">≡</span>
+            <span class="nav-label">Лог</span>
           </button>
         </nav>
         <section class="status-stack" aria-label="Текущий объект">
@@ -294,6 +294,6 @@
       </aside>
     </div>
 
-    <script src="/app.js?v=71" type="module"></script>
+    <script src="/app.js?v=74" type="module"></script>
   </body>
 </html>

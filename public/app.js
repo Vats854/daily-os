@@ -402,6 +402,11 @@ function normalizeState(nextState) {
   });
   nextState.notes = Array.isArray(nextState.notes) ? nextState.notes : [];
   nextState.inboxItems = Array.isArray(nextState.inboxItems) ? nextState.inboxItems : [];
+  nextState.inboxItems.forEach((item) => {
+    item.status = item.status || (item.linkedId ? "processed" : "open");
+    item.linkedType = item.linkedType || "";
+    item.linkedId = item.linkedId || "";
+  });
   nextState.dailyReviews = Array.isArray(nextState.dailyReviews) ? nextState.dailyReviews : [];
   nextState.calendarEvents = Array.isArray(nextState.calendarEvents) ? nextState.calendarEvents : [];
   nextState.assistantActions = Array.isArray(nextState.assistantActions) ? nextState.assistantActions : [];
@@ -804,6 +809,9 @@ async function processInbox(text) {
     id: crypto.randomUUID(),
     text,
     parsed,
+    status: "open",
+    linkedType: "",
+    linkedId: "",
     createdAt: new Date().toISOString()
   };
 
@@ -826,6 +834,9 @@ async function processInbox(text) {
     });
     state.projects.unshift(newProject);
     state.selectedProjectId = newProject.id;
+    inboxItem.status = overload ? "needs_review" : "processed";
+    inboxItem.linkedType = "project";
+    inboxItem.linkedId = newProject.id;
     state.projectStageEvents.unshift(stageEvent(newProject.id, null, newProject.journeyStage, newProject.stageReason, "assistant", "confirmed"));
     state.assistantActions.unshift(action(
       overload ? "Новый проект поставлен на проверку" : "Новый проект создан",
@@ -842,15 +853,22 @@ async function processInbox(text) {
       needsReview: parsed.needsReview
     };
     state.tasks.unshift(newTask);
+    inboxItem.status = parsed.needsReview ? "needs_review" : "processed";
+    inboxItem.linkedType = "task";
+    inboxItem.linkedId = newTask.id;
     selectTask(newTask.id);
   } else {
-    state.notes.unshift({
+    const newNote = {
       id: crypto.randomUUID(),
       type: parsed.kind,
       area: parsed.area,
       text,
       createdAt: new Date().toISOString()
-    });
+    };
+    state.notes.unshift(newNote);
+    inboxItem.status = parsed.needsReview ? "needs_review" : "processed";
+    inboxItem.linkedType = "note";
+    inboxItem.linkedId = newNote.id;
   }
 
   if (parsed.kind === "health_signal") {
@@ -1134,9 +1152,18 @@ function primaryActionLabel(view) {
   }[view] || "Проверить";
 }
 
+function inspectorIsUseful(view) {
+  if (getSelectedTask()) return true;
+  if (view === "today") return true;
+  if (view === "projects") return Boolean(state.selectedProjectId || state.projects[0]);
+  if (view === "inbox") return Boolean(getSelectedInboxItem());
+  return false;
+}
+
 function renderShell() {
   const activeView = state.settings.activeView;
   document.body.dataset.view = activeView;
+  document.body.dataset.inspector = inspectorIsUseful(activeView) ? "on" : "off";
   document.querySelectorAll(".nav-button").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === activeView);
   });
@@ -1260,6 +1287,162 @@ function renderTaskInspector(item) {
   ${renderFocusCompanion(item)}`;
 }
 
+function getSelectedInboxItem() {
+  return state.inboxItems.find((item) => item.id === state.ui?.selectedInboxId)
+    || state.inboxItems.find((item) => item.status === "needs_review")
+    || state.inboxItems[0]
+    || null;
+}
+
+function inboxStatusLabel(status) {
+  return {
+    open: "raw",
+    processed: "processed",
+    needs_review: "review",
+    archived: "archived"
+  }[status] || status || "raw";
+}
+
+function getInboxLinkedObject(item) {
+  if (!item?.linkedType || !item?.linkedId) return null;
+  if (item.linkedType === "task") return state.tasks.find((candidate) => candidate.id === item.linkedId) || null;
+  if (item.linkedType === "project") return state.projects.find((candidate) => candidate.id === item.linkedId) || null;
+  if (item.linkedType === "note") return state.notes.find((candidate) => candidate.id === item.linkedId) || null;
+  return null;
+}
+
+function createTaskFromInbox(item, status = "backlog") {
+  if (!item) return null;
+  const existing = item.linkedType === "task" ? getInboxLinkedObject(item) : null;
+  if (existing) {
+    if (taskStatuses.includes(status)) {
+      existing.previousStatus = existing.status === "done" ? status : existing.status;
+      existing.status = status;
+      existing.updatedAt = new Date().toISOString();
+    }
+    item.status = "processed";
+    state.assistantActions.unshift(action("Связанная задача обновлена", `${existing.title} → ${statusLabel(status)}`, "confirmed"));
+    selectTask(existing.id);
+    return existing;
+  }
+  const category = suggestCategoryForInbox(item);
+  const projectItem = category.kind === "project" ? findByTitle(state.projects, category.title) : null;
+  const routineItem = category.kind === "routine" ? findByTitle(state.routines, category.title) : null;
+  const newTask = {
+    ...task(item.parsed?.title || item.text, status, category.area || item.parsed?.area || "admin", item.parsed?.priority || "medium", 30, projectItem?.id || null),
+    routineId: routineItem?.id || null,
+    tags: ["inbox"],
+    needsReview: item.status === "needs_review" || Boolean(item.parsed?.needsReview)
+  };
+  state.tasks.unshift(newTask);
+  item.status = "processed";
+  item.linkedType = "task";
+  item.linkedId = newTask.id;
+  state.assistantActions.unshift(action(
+    status === "today" ? "Входящее стало задачей Today" : "Входящее стало задачей Backlog",
+    `${item.parsed?.title || item.text} → ${statusLabel(status)}`,
+    "confirmed"
+  ));
+  selectTask(newTask.id);
+  return newTask;
+}
+
+function saveInboxAsNote(item) {
+  if (!item) return null;
+  const existing = item.linkedType === "note" ? getInboxLinkedObject(item) : null;
+  if (existing) return existing;
+  const newNote = {
+    id: crypto.randomUUID(),
+    type: item.parsed?.kind || "note",
+    area: item.parsed?.area || "personal",
+    text: item.text,
+    createdAt: new Date().toISOString()
+  };
+  state.notes.unshift(newNote);
+  item.status = "processed";
+  item.linkedType = "note";
+  item.linkedId = newNote.id;
+  state.assistantActions.unshift(action("Входящее сохранено заметкой", item.parsed?.title || item.text, "confirmed"));
+  return newNote;
+}
+
+function openInboxLinkedObject(item) {
+  const linked = getInboxLinkedObject(item);
+  if (!linked) return false;
+  state.ui = state.ui || {};
+  state.ui.selectedTaskId = null;
+  if (item.linkedType === "task") {
+    selectTask(linked.id, linked.status === "today" ? "today" : "board");
+  }
+  if (item.linkedType === "project") {
+    state.selectedProjectId = linked.id;
+    state.settings.activeView = "projects";
+  }
+  if (item.linkedType === "note") {
+    state.settings.activeView = "log";
+  }
+  return true;
+}
+
+function deleteInboxItem(item) {
+  if (!item) return;
+  state.inboxItems = state.inboxItems.filter((candidate) => candidate.id !== item.id);
+  if (state.ui?.selectedInboxId === item.id) state.ui.selectedInboxId = state.inboxItems[0]?.id || null;
+  state.assistantActions.unshift(action("Входящее удалено", item.parsed?.title || item.text, "confirmed"));
+}
+
+function handleInboxAction(actionName, item) {
+  if (!item) return false;
+  state.ui = state.ui || {};
+  state.ui.selectedInboxId = item.id;
+  if (actionName === "task-today") createTaskFromInbox(item, "today");
+  if (actionName === "task-backlog") createTaskFromInbox(item, "backlog");
+  if (actionName === "note") saveInboxAsNote(item);
+  if (actionName === "open-linked") openInboxLinkedObject(item);
+  if (actionName === "delete") deleteInboxItem(item);
+  return true;
+}
+
+function renderInboxInspector(item) {
+  if (!item) {
+    return `<section class="inspector-object-card accent-sky">
+      <span class="pill">Inbox</span>
+      <h2>Разобрать входящие</h2>
+      <p>Добавь мысль или задачу слева. Здесь появятся действия: превратить в задачу, заметку или открыть связанный объект.</p>
+    </section>`;
+  }
+
+  const category = suggestCategoryForInbox(item);
+  const linked = getInboxLinkedObject(item);
+  return `<section class="inspector-object-card accent-sky inbox-review-card" data-inbox-id="${escapeHtml(item.id)}">
+    <span class="pill">${escapeHtml(inboxStatusLabel(item.status))}</span>
+    <h2>${escapeHtml(item.parsed?.title || item.text)}</h2>
+    <p>${escapeHtml(item.text)}</p>
+    <div class="inspector-category-line">
+      ${renderCategoryChip(category)}
+      <span class="tag">${escapeHtml(labelForKind(item.parsed?.kind || "context"))}</span>
+      <span class="tag">${escapeHtml(areaLabels[item.parsed?.area] || "личное")}</span>
+    </div>
+    ${linked ? `<div class="inbox-linked-object">
+      <span>Связано</span>
+      <strong>${escapeHtml(linked.title || linked.text || "Заметка")}</strong>
+    </div>` : ""}
+    <div class="inbox-inspector-actions">
+      ${linked ? `<button class="secondary-button" type="button" data-inbox-action="open-linked">Открыть объект</button>` : ""}
+      <button class="primary-button" type="button" data-inbox-action="task-today">В Today</button>
+      <button class="secondary-button" type="button" data-inbox-action="task-backlog">В Backlog</button>
+      <button class="secondary-button" type="button" data-inbox-action="note">Заметкой</button>
+      <button class="ghost-button danger" type="button" data-inbox-action="delete">Удалить</button>
+    </div>
+  </section>
+  <section class="inspector-decision-list">
+    <article class="inspector-decision">
+      <strong>Следующий шаг</strong>
+      <p>${escapeHtml(item.parsed?.suggestedAction || item.parsed?.reason || "Выбери действие выше. После этого запись перестанет быть мёртвой карточкой и попадёт в рабочую систему.")}</p>
+    </article>
+  </section>`;
+}
+
 function renderAppInspector(activeView) {
   const mode = document.querySelector("#inspectorMode");
   const root = document.querySelector("#appInspectorContent");
@@ -1302,16 +1485,9 @@ function renderAppInspector(activeView) {
   }
 
   if (activeView === "inbox") {
-    const reviewItem = state.inboxItems.find((item) => item.id === state.ui?.selectedInboxId) || state.inboxItems.find((item) => item.parsed?.needsReview) || state.inboxItems[0];
+    const reviewItem = getSelectedInboxItem();
     mode.textContent = "operator review";
-    root.innerHTML = `<section class="inspector-object-card accent-sky">
-      <span class="pill">Capture → Queue → Review</span>
-      <h2>${escapeHtml(reviewItem?.parsed?.title || "Разобрать входящие")}</h2>
-      <p>${escapeHtml(reviewItem?.text || "Сырой текст должен стать задачей, заметкой, проектом или вопросом на подтверждение.")}</p>
-    </section>
-    <section class="inspector-decision-list">
-      <article class="inspector-decision"><strong>Следующее действие</strong><p>Отправь текст в AI Inbox или выбери входящее, чтобы увидеть интерпретацию.</p></article>
-    </section>`;
+    root.innerHTML = renderInboxInspector(reviewItem);
     return;
   }
 
@@ -1358,7 +1534,9 @@ function suggestCategoryForInbox(item) {
 
 function renderInbox() {
   document.querySelector("#inboxItemList").innerHTML = state.inboxItems.length
-    ? state.inboxItems.slice(0, 10).map((item) => `<article class="inbox-item ${state.ui?.selectedInboxId === item.id ? "selected" : ""}" data-inbox-id="${item.id}">
+    ? state.inboxItems.slice(0, 10).map((item) => {
+      const linked = getInboxLinkedObject(item);
+      return `<article class="inbox-item ${state.ui?.selectedInboxId === item.id ? "selected" : ""}" data-inbox-id="${item.id}">
       <button class="inbox-object-button" type="button" data-action="select-inbox">
         <strong>${escapeHtml(item.parsed?.title || item.text)}</strong>
         <p>${escapeHtml(item.text)}</p>
@@ -1367,9 +1545,18 @@ function renderInbox() {
         <span class="tag">${labelForKind(item.parsed?.kind || "context")}</span>
         <span class="tag">${areaLabels[item.parsed?.area] || "личное"}</span>
         <span class="tag strong-tag">${escapeHtml(suggestCategoryForInbox(item).title)}</span>
+        <span class="tag">${escapeHtml(inboxStatusLabel(item.status))}</span>
+        ${linked ? `<span class="tag">${escapeHtml(item.linkedType)}</span>` : ""}
         ${item.parsed?.needsReview ? `<span class="tag">needs review</span>` : ""}
       </div>
-    </article>`).join("")
+      <div class="inbox-actions">
+        ${linked ? `<button type="button" data-inbox-action="open-linked">Открыть</button>` : ""}
+        <button type="button" data-inbox-action="task-today">Today</button>
+        <button type="button" data-inbox-action="task-backlog">Backlog</button>
+        <button type="button" data-inbox-action="delete">Удалить</button>
+      </div>
+    </article>`;
+    }).join("")
     : `<div class="empty">Входящих пока нет</div>`;
 
   document.querySelector("#assistantFeed").innerHTML = state.assistantActions
@@ -2191,15 +2378,34 @@ document.querySelector("#todayView").addEventListener("click", (event) => {
 });
 
 document.querySelector("#inboxView").addEventListener("click", (event) => {
+  const inboxAction = event.target.closest("[data-inbox-action]");
+  if (inboxAction) {
+    const row = inboxAction.closest("[data-inbox-id]");
+    const item = state.inboxItems.find((candidate) => candidate.id === row?.dataset.inboxId);
+    handleInboxAction(inboxAction.dataset.inboxAction, item);
+    saveState();
+    return;
+  }
+
   const inboxObject = event.target.closest('[data-action="select-inbox"]');
   if (!inboxObject) return;
   const row = inboxObject.closest("[data-inbox-id]");
   state.ui = state.ui || {};
   state.ui.selectedInboxId = row?.dataset.inboxId || null;
+  state.ui.selectedTaskId = null;
   saveState();
 });
 
 document.body.addEventListener("click", (event) => {
+  const inboxAction = event.target.closest(".app-inspector [data-inbox-action]");
+  if (inboxAction) {
+    const row = inboxAction.closest("[data-inbox-id]");
+    const item = state.inboxItems.find((candidate) => candidate.id === row?.dataset.inboxId);
+    handleInboxAction(inboxAction.dataset.inboxAction, item);
+    saveState();
+    return;
+  }
+
   const habitToggle = event.target.closest('[data-action="toggle-habit"]');
   if (habitToggle) {
     const habitItem = habitToggle.closest("[data-habit-id]");
@@ -2432,6 +2638,7 @@ document.querySelector("#searchResults").addEventListener("click", (event) => {
   }
   if (type === "inbox") {
     state.ui.selectedInboxId = id;
+    state.ui.selectedTaskId = null;
     state.settings.activeView = "inbox";
   }
   if (type === "note") {
