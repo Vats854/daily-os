@@ -36,11 +36,11 @@ body[data-auth="signed-in"] .simple-app {
   color: var(--core-text);
 }
 
-.simple-app.detail-open {
+body[data-auth] .simple-app.detail-open {
   grid-template-columns: 56px 240px minmax(420px, 520px) minmax(0, 1fr);
 }
 
-.simple-app[data-module="calendar"].detail-open {
+body[data-auth] .simple-app[data-module="calendar"].detail-open {
   grid-template-columns: 56px 240px minmax(0, 1fr) 360px;
 }
 
@@ -1034,8 +1034,8 @@ body[data-auth="signed-in"] .simple-app {
 }
 
 /* Notes are documents, so their editor owns the main canvas instead of using a task inspector. */
-.simple-app[data-module="notes"],
-.simple-app[data-module="notes"].detail-open {
+body[data-auth] .simple-app[data-module="notes"],
+body[data-auth] .simple-app[data-module="notes"].detail-open {
   grid-template-columns: 56px 220px 320px minmax(0, 1fr);
 }
 
@@ -1605,11 +1605,11 @@ body[data-auth="signed-in"] .simple-app {
 }
 
 @media (max-width: 1180px) {
-  .simple-app.detail-open {
+  body[data-auth] .simple-app.detail-open {
     grid-template-columns: 56px 228px minmax(0, 1fr);
   }
 
-  .simple-app[data-module="calendar"].detail-open {
+  body[data-auth] .simple-app[data-module="calendar"].detail-open {
     grid-template-columns: 56px 228px minmax(0, 1fr);
   }
 
@@ -1623,8 +1623,8 @@ body[data-auth="signed-in"] .simple-app {
     box-shadow: -12px 0 34px rgba(23, 32, 51, .12);
   }
 
-  .simple-app[data-module="notes"],
-  .simple-app[data-module="notes"].detail-open {
+  body[data-auth] .simple-app[data-module="notes"],
+  body[data-auth] .simple-app[data-module="notes"].detail-open {
     grid-template-columns: 56px 190px 300px minmax(0, 1fr);
   }
 
@@ -1763,8 +1763,8 @@ body[data-auth="signed-in"] .simple-app {
     padding: 20px 16px;
   }
 
-  .simple-app[data-module="notes"],
-  .simple-app[data-module="notes"].detail-open {
+  body[data-auth] .simple-app[data-module="notes"],
+  body[data-auth] .simple-app[data-module="notes"].detail-open {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr) 58px;
   }

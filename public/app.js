@@ -3339,11 +3339,22 @@ function addSimpleComposerItem(text, meta) {
     return;
   }
   const status = meta.kind === "tasks" && meta.status !== "done" ? meta.status : "inbox";
-  const area = meta.area || state.ui?.simpleArea || taskLists()[0]?.id || "personal";
+  const area = meta.area || state.ui?.simpleArea || suggestedTaskArea(text);
   const item = task(text, status || "inbox", area, "medium", 25, null);
   state.tasks.unshift(item);
   selectTask(item.id);
   state.assistantActions.unshift(action("Задача добавлена", text, "confirmed"));
+}
+
+function suggestedTaskArea(title) {
+  const text = String(title || "").toLowerCase();
+  const available = new Set(taskListIds());
+  const choose = (preferred, fallback = "personal") => available.has(preferred) ? preferred : (available.has(fallback) ? fallback : taskLists()[0]?.id || "personal");
+
+  if (/зал|спорт|трениров|фитнес|бег|йог|bjj|сон|здоров|восстанов/.test(text)) return choose("health");
+  if (/учеб|обуч|курс|лекц|конспект|экзамен|математ|английск/.test(text)) return choose("learning");
+  if (/работ|созвон|клиент|отч[её]т|презентац|ваканси|резюме/.test(text)) return choose("work");
+  return choose("personal");
 }
 
 function renderTodayNow(blockModel, nowMeta) {
