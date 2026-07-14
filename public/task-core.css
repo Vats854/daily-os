@@ -1304,19 +1304,62 @@ body[data-auth] .simple-app[data-module="notes"].detail-open {
   text-align: left;
 }
 
-.simple-task-summary span {
+.simple-task-summary button {
   min-height: 28px;
   padding: 5px 9px;
   border: 1px solid var(--core-line);
   border-radius: 7px;
+  background: var(--core-surface);
   color: #5d687b;
   font-size: 12px;
   font-weight: 650;
 }
 
-.simple-task-summary:hover span {
+.simple-task-summary button:hover,
+.simple-task-summary button.active {
   border-color: #cbd8eb;
   background: #f8faff;
+}
+
+.simple-task-summary .simple-tags-summary {
+  color: var(--core-blue);
+}
+
+.simple-quick-tags {
+  display: grid;
+  gap: 10px;
+  max-width: 520px;
+  padding: 12px;
+  border: 1px solid var(--core-line);
+  border-radius: 8px;
+  background: var(--core-bg);
+}
+
+.simple-quick-tags > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.simple-quick-tags label {
+  display: grid;
+  gap: 5px;
+}
+
+.simple-quick-tags label span {
+  color: var(--core-muted);
+  font-size: 10px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.simple-quick-tags input {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--core-line);
+  border-radius: 7px;
+  background: var(--core-surface);
+  color: var(--core-text);
 }
 
 .simple-subtasks { display: grid; gap: 8px; padding-top: 2px; }

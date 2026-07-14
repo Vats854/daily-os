@@ -318,6 +318,7 @@ state.ui.pendingDeleteTaskId = state.ui.pendingDeleteTaskId || "";
 state.ui.pendingDeleteNoteId = state.ui.pendingDeleteNoteId || "";
 state.ui.taskMenuOpen = false;
 state.ui.taskMenuPosition = null;
+state.ui.quickTagsOpen = false;
 state.ui.appearanceOpen = false;
 state.ui.calendarWeekOffset = Number.isInteger(state.ui.calendarWeekOffset) ? state.ui.calendarWeekOffset : 0;
 
@@ -3261,13 +3262,17 @@ function renderSimpleDetail(meta) {
       </div>
       <input class="simple-title-input" data-task-field="title" value="${escapeHtml(taskItem.title)}" />
       <textarea class="simple-description-input" data-task-field="description" placeholder="Описание или заметки к задаче">${escapeHtml(taskItem.description || "")}</textarea>
-      <button type="button" class="simple-task-summary" data-simple-action="task-menu" aria-label="Открыть параметры задачи">
-        <span>${escapeHtml(dueSummary)}</span>
-        <span>${escapeHtml(priorityLabel(taskItem.priority))}</span>
-        <span>${escapeHtml(listLabel(taskItem.area))}</span>
-        <span>${taskItem.estimate} мин</span>
-        ${(taskItem.tags || []).slice(0, 2).map((tag) => `<span>#${escapeHtml(tag)}</span>`).join("")}
-      </button>
+      <div class="simple-task-summary" aria-label="Параметры задачи">
+        <button type="button" data-simple-action="task-menu">${escapeHtml(dueSummary)}</button>
+        <button type="button" data-simple-action="task-menu">${escapeHtml(priorityLabel(taskItem.priority))}</button>
+        <button type="button" data-simple-action="task-menu">${escapeHtml(listLabel(taskItem.area))}</button>
+        <button type="button" data-simple-action="task-menu">${taskItem.estimate} мин</button>
+        <button type="button" class="simple-tags-summary ${state.ui.quickTagsOpen ? "active" : ""}" data-simple-action="quick-tags" aria-expanded="${state.ui.quickTagsOpen ? "true" : "false"}">${(taskItem.tags || []).length ? (taskItem.tags || []).slice(0, 2).map((tag) => `#${escapeHtml(tag)}`).join(" · ") : "+ Тег"}</button>
+      </div>
+      ${state.ui.quickTagsOpen ? `<section class="simple-quick-tags" aria-label="Быстрый выбор тегов">
+        <div>${knownTags.map((tag) => `<button type="button" class="option-chip ${(taskItem.tags || []).includes(tag) ? "active" : ""}" data-task-tag="${escapeHtml(tag)}">#${escapeHtml(tag)}</button>`).join("") || `<small>Тегов пока нет — добавь первый ниже.</small>`}</div>
+        <label><span>Новый тег</span><input data-task-field="tags" value="${escapeHtml((taskItem.tags || []).join(", "))}" placeholder="например: зал, здоровье" /></label>
+      </section>` : ""}
       <section class="simple-subtasks" aria-label="Подзадачи">
         <div class="simple-subtasks-head"><strong>Подзадачи</strong><span>${taskItem.subtasks.filter((item) => item.done).length}/${taskItem.subtasks.length}</span></div>
         <div class="simple-subtask-list">${taskItem.subtasks.map((subtask) => `<div class="simple-subtask-row" data-subtask-id="${escapeHtml(subtask.id)}"><button type="button" class="task-toggle ${subtask.done ? "done" : ""}" data-simple-action="toggle-subtask" aria-label="${subtask.done ? "Вернуть подзадачу" : "Завершить подзадачу"}"></button><span class="${subtask.done ? "done" : ""}">${escapeHtml(subtask.title)}</span><button type="button" class="simple-subtask-delete" data-simple-action="delete-subtask" aria-label="Удалить подзадачу">×</button></div>`).join("")}</div>
@@ -4567,8 +4572,16 @@ document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
     return;
   }
   if (detailAction?.dataset.simpleAction === "task-menu") {
+    state.ui.quickTagsOpen = false;
     state.ui.taskMenuOpen = !state.ui.taskMenuOpen;
     state.ui.taskMenuPosition = null;
+    saveState();
+    return;
+  }
+  if (detailAction?.dataset.simpleAction === "quick-tags") {
+    state.ui.taskMenuOpen = false;
+    state.ui.taskMenuPosition = null;
+    state.ui.quickTagsOpen = !state.ui.quickTagsOpen;
     saveState();
     return;
   }
@@ -4703,6 +4716,7 @@ document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
     selectTask(taskRow.dataset.taskId);
     state.ui.selectedNoteId = null;
     state.ui.taskMenuOpen = false;
+    state.ui.quickTagsOpen = false;
     saveState();
     return;
   }
@@ -4750,6 +4764,10 @@ document.addEventListener("click", (event) => {
   }
   if (state.ui?.appearanceOpen && !event.target.closest("#simpleAppearanceMenu, #simpleAppearanceToggle")) {
     state.ui.appearanceOpen = false;
+    renderSimpleApp();
+  }
+  if (state.ui?.quickTagsOpen && !event.target.closest(".simple-quick-tags, [data-simple-action='quick-tags']")) {
+    state.ui.quickTagsOpen = false;
     renderSimpleApp();
   }
   if (!state.ui?.taskMenuOpen) return;
