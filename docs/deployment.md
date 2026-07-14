@@ -1,5 +1,44 @@
 # Deployment Sketch
 
+## Revision-safe state sync
+
+Run the current version of:
+
+```text
+db/supabase-state-sync.sql
+```
+
+It adds a monotonic `revision` to `daily_os_states` and installs the atomic
+`save_daily_os_state` function. The PWA sends the revision it last loaded; the
+database rejects stale phone/laptop writes instead of silently accepting the
+last request.
+
+The frontend deliberately refuses cloud writes before this SQL upgrade. Local
+changes remain on the current device and the app shows an actionable setup
+message. This is safer than an unconditional legacy upsert that could overwrite
+newer phone or laptop data.
+
+On a conflict the browser stores the unsaved local snapshot and revision metadata
+under `second-brain-command-center:conflict-backup`, loads the newer cloud state,
+and asks whether to keep the cloud version or explicitly restore the local one.
+No further cloud writes run while that choice is unresolved.
+
+## Normalized Notes storage
+
+After the base state sync is working, run the entire file below in Supabase SQL Editor:
+
+```text
+db/content-schema.sql
+```
+
+It creates private, user-owned `note_folders` and `notes` tables with RLS. No new
+Vercel environment variables are required. Deploy the current `main` branch after
+applying the SQL.
+
+The rollout is backward-compatible: before the SQL is applied, Notes remain in
+`daily_os_states`; after the tables are available, the first signed-in load copies
+existing folders and notes into the normalized tables automatically.
+
 ## Recommended VPS
 
 Use the 4 GB RAM / 50 GB disk VPS. It leaves enough room for the PWA/API service, Postgres, a worker, reverse proxy, logs, backups, and swap.
@@ -57,6 +96,11 @@ MVP policy is read-only:
 - store event windows as constraints;
 - never create, update, or delete calendar events;
 - keep `CALENDAR_WRITE_ENABLED=false`.
+
+The calendar UI uses the FullCalendar global bundle from jsDelivr. The first
+online load caches the asset through the existing service worker. Internal Daily
+OS blocks are editable; imported calendar events must be created with
+`editable: false` until write-back is explicitly enabled.
 
 ## Backup Plan
 

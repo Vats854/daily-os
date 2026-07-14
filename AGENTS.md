@@ -22,6 +22,30 @@ If these documents conflict, prefer:
 
 `PRODUCT.md` + `DESIGN.md` → current source of truth.
 
+## Large-stage workflow
+
+For a substantial feature, cross-module change, architecture refactor, or redesign, use
+the repository skill at `.agents/skills/run-daily-os-stage/SKILL.md` before coding.
+
+- Write a compact stage brief under `docs/stages/`.
+- Reference source-of-truth files instead of copying conversation history.
+- State scope, non-goals, acceptance criteria, risks, and verification.
+- Keep small follow-up fixes in the current task.
+- Recommend a new Codex task only when the stage is independently reviewable; do not
+  create a user-owned task without an explicit user request.
+
+## Large-stage workflow
+
+For a substantial feature, cross-module change, architecture refactor, or redesign, use
+the repository skill at `.agents/skills/run-daily-os-stage/SKILL.md` before coding.
+
+- Write a compact stage brief under `docs/stages/`.
+- Reference source-of-truth files instead of copying conversation history.
+- State scope, non-goals, acceptance criteria, risks, and verification.
+- Keep small follow-up fixes in the current task.
+- Recommend a new Codex task only when the stage is independently reviewable; do not
+  create a user-owned task without an explicit user request.
+
 ## User expectations
 
 The user does not accept tiny CSS tweaks as redesign.

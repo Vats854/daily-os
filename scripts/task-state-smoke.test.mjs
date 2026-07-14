@@ -1,0 +1,124 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  completeTaskRecord,
+  createBackupPayload,
+  createAuditRecord,
+  createFocusSessionRecord,
+  createInboxRecord,
+  createTaskRecord,
+  parseStateSnapshot,
+  parseBackupPayload,
+  resolveInboxRecord,
+  scheduleTaskRecord,
+  serializeStateSnapshot,
+  updateTaskRecord
+} from "../public/task-state.js";
+
+test("backup envelope survives export and import", () => {
+  const exportedAt = "2026-07-13T18:00:00.000Z";
+  const source = {
+    tasks: [{ id: "task-backup", title: "Проверить backup" }],
+    notes: [{ id: "note-backup", title: "Контекст", text: "Сохранён" }],
+    habits: [{ id: "habit-backup", title: "План дня" }],
+    projects: [{ id: "project-backup", title: "Daily OS" }]
+  };
+  const envelope = createBackupPayload(source, { exportedAt });
+  const restored = parseBackupPayload(JSON.stringify(envelope));
+
+  assert.equal(restored.format, "daily-os-backup");
+  assert.equal(restored.version, 1);
+  assert.equal(restored.exportedAt, exportedAt);
+  assert.deepEqual(restored.state, source);
+});
+
+test("foreign and unsupported backups are rejected", () => {
+  assert.throws(() => parseBackupPayload(JSON.stringify({ format: "other", version: 1, exportedAt: new Date().toISOString(), state: {} })), /Unknown Daily OS backup format/);
+  assert.throws(() => parseBackupPayload(JSON.stringify({ format: "daily-os-backup", version: 2, exportedAt: new Date().toISOString(), state: {} })), /Unsupported Daily OS backup version/);
+  assert.throws(() => parseBackupPayload("not json"), /Unexpected token|not valid JSON/);
+});
+
+test("task survives create, edit and reload", () => {
+  const createdAt = "2026-07-13T10:00:00.000Z";
+  const updatedAt = "2026-07-13T10:05:00.000Z";
+  const task = createTaskRecord({
+    id: "smoke-task",
+    title: "Проверить сохранение",
+    status: "today",
+    area: "work",
+    priority: "medium",
+    estimate: 25,
+    now: createdAt
+  });
+
+  updateTaskRecord(task, "title", "Проверить сохранение после reload", { now: updatedAt });
+  updateTaskRecord(task, "priority", "high", { priorities: ["low", "medium", "high"], now: updatedAt });
+  updateTaskRecord(task, "tags", "smoke, persistence", { now: updatedAt });
+
+  const restored = parseStateSnapshot(serializeStateSnapshot({ tasks: [task] }));
+  assert.deepEqual(restored.tasks[0], {
+    ...task,
+    title: "Проверить сохранение после reload",
+    priority: "high",
+    tags: ["smoke", "persistence"],
+    updatedAt
+  });
+});
+
+test("invalid persisted snapshots are rejected", () => {
+  assert.throws(() => parseStateSnapshot("[]"), /Invalid Daily OS state snapshot/);
+});
+
+test("core daily workflow survives serialization and reload", () => {
+  const capturedAt = "2026-07-13T08:00:00.000Z";
+  const focusedAt = "2026-07-13T09:00:00.000Z";
+  const completedAt = "2026-07-13T09:25:00.000Z";
+  const inboxItem = createInboxRecord({ id: "inbox-1", text: "Подготовить план недели", now: capturedAt });
+  const task = createTaskRecord({ id: "task-1", title: inboxItem.text, status: "inbox", now: capturedAt });
+
+  resolveInboxRecord(inboxItem, {
+    kind: "task",
+    linkedId: task.id,
+    reason: "Запись содержит конкретное действие.",
+    now: capturedAt
+  });
+  updateTaskRecord(task, "priority", "high", { priorities: ["low", "medium", "high"], now: capturedAt });
+  const block = scheduleTaskRecord(task, {
+    blockId: "block-1",
+    date: "2026-07-13",
+    start: "09:00",
+    end: "09:25",
+    now: focusedAt
+  });
+  const focusSession = createFocusSessionRecord({
+    id: "focus-1",
+    taskId: task.id,
+    startedAt: focusedAt,
+    endedAt: completedAt,
+    soundCategory: "calm_focus"
+  });
+  completeTaskRecord(task, { now: completedAt });
+  const audit = createAuditRecord({
+    id: "audit-1",
+    title: "Задача завершена",
+    reason: "Завершена после фокус-сессии.",
+    sourceType: "task",
+    sourceId: task.id,
+    now: completedAt
+  });
+
+  const restored = parseStateSnapshot(serializeStateSnapshot({
+    inboxItems: [inboxItem],
+    tasks: [task],
+    calendarEvents: [block],
+    focusSessions: [focusSession],
+    assistantActions: [audit]
+  }));
+
+  assert.equal(restored.inboxItems[0].parsed.linkedId, "task-1");
+  assert.equal(restored.tasks[0].status, "done");
+  assert.equal(restored.tasks[0].previousStatus, "today");
+  assert.equal(restored.calendarEvents[0].taskId, "task-1");
+  assert.equal(restored.focusSessions[0].durationMinutes, 25);
+  assert.equal(restored.assistantActions[0].sourceId, "task-1");
+});

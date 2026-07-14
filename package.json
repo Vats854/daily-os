@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "check": "node --check server.js"
+    "check": "node --check public/app.js && node --check public/sw.js && node --check server.js && node scripts/reliability-check.mjs && node --test scripts/task-state-smoke.test.mjs",
+    "check:reliability": "node scripts/reliability-check.mjs",
+    "check:task-state": "node --test scripts/task-state-smoke.test.mjs"
   },
   "engines": {
     "node": ">=20"

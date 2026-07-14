@@ -1,0 +1,36 @@
+import { readFile } from "node:fs/promises";
+
+const [html, app, styles, worker, supabaseClient] = await Promise.all([
+  readFile(new URL("../public/index.html", import.meta.url), "utf8"),
+  readFile(new URL("../public/app.js", import.meta.url), "utf8"),
+  readFile(new URL("../public/task-core.css", import.meta.url), "utf8"),
+  readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
+  readFile(new URL("../public/supabase-client.js", import.meta.url), "utf8")
+]);
+
+const contracts = [
+  ["all primary modules exist", ["capture", "tasks", "calendar", "habits", "focus", "notes", "projects", "log"].every((module) => html.includes(`data-simple-module="${module}"`))],
+  ["production shell is the only active shell", html.includes('id="simpleApp"') && html.includes('class="app-shell legacy-app" hidden inert aria-hidden="true"')],
+  ["render exits after the production shell", /function render\(\) \{\s*if \(document\.querySelector\("#simpleApp"\)\) \{\s*renderSimpleApp\(\);\s*return;/m.test(app)],
+  ["task view memory is normalized", app.includes("nextState.ui.lastTaskView") && app.includes("state.ui.lastTaskView = state.settings.activeView")],
+  ["focus controls are wired to the active shell", app.includes('document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>') && app.includes('event.target.closest("[data-sound-action]")')],
+  ["live focus volume is wired", app.includes('event.target.closest(\'[data-focus-field="volume"]\')') && app.includes("focusRuntime.gain.gain.value")],
+  ["habit history is visible", app.includes("renderSimpleHabitGroups") && styles.includes(".simple-habit-week")],
+  ["cloud saves are serialized", app.includes("cloudSync.inFlight") && app.includes("cloudSync.pendingSnapshot") && /if \(cloudSync\.inFlight \|\| !cloudSync\.pendingSnapshot/.test(app)],
+  ["rapid edits are coalesced", app.includes("cloudSync.pendingSnapshot = structuredClone(state)") && app.includes("window.setTimeout(flushCloudSave, 0)")],
+  ["unresolved conflicts block cloud writes", /if \(cloudSync\.status === "conflict"\) return;/.test(app) && app.includes("cloudSync.pendingSnapshot = null")],
+  ["unsafe legacy upsert is disabled", supabaseClient.includes("SYNC_UPGRADE_REQUIRED") && !supabaseClient.includes('.from("daily_os_states").upsert')],
+  ["sync diagnostics are accessible", html.includes('id="simpleSyncToggle"') && html.includes('id="simpleSyncPanel"') && app.includes("renderSimpleSyncPanel")],
+  ["sync retry uses the safe queue", app.includes('data-simple-sync-action="retry"') && app.includes("queueCloudSave({ immediate: true })")],
+  ["asset versions match", html.includes("styles.css?v=129") && html.includes("task-core.css?v=129") && html.includes("app.js?v=129") && worker.includes("v129")],
+  ["backup input exists", html.includes('id="simpleBackupInput"') && html.includes('accept="application/json,.json"')],
+  ["backup actions are wired", app.includes("createBackupPayload") && app.includes("parseBackupPayload") && app.includes('data-simple-backup-action="confirm"')],
+  ["auth is non-blocking", !styles.includes('body[data-auth="signed-out"] .auth-gate') && styles.includes('body[data-auth="signed-out"] .simple-app')],
+  ["fresh state is clean", app.includes("function createCleanInitialState") && app.includes("initial.tasks = []") && app.includes("initial.projects = []")],
+  ["undo is available", app.includes("function stageUndo") && app.includes("function restoreUndo") && app.includes("data-simple-undo")],
+  ["offline work is explicit", app.includes('window.addEventListener("offline"') && app.includes("Работа продолжается на этом устройстве")]
+];
+
+const failed = contracts.filter(([, valid]) => !valid);
+contracts.forEach(([name, valid]) => console.log(`${valid ? "ok" : "fail"} - ${name}`));
+if (failed.length) process.exitCode = 1;

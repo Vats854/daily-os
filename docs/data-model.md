@@ -93,6 +93,8 @@ Assistant-proposed events must start as `needs_confirmation`.
 - `priority`
 - `estimated_minutes`
 - `due_date`
+- `tags`
+- `pinned`
 - `needs_review`
 - `created_by`
 - `created_at`
@@ -105,6 +107,25 @@ Suggested `status` values:
 - `this_week`
 - `today`
 - `done`
+
+Task option contract for the current JSON-state MVP:
+
+- `priority` controls the visible flag and accepts `low`, `medium`, or `high`.
+- `area_id` / client `area` moves the task between user-created lists.
+- `tags` is an editable string array used in task rows and future filters.
+- `pinned` sorts active pinned tasks above unpinned tasks in the current list.
+- Starting Focus sets `focus.selectedTaskId`, starts the timer, and writes an audit action.
+- Every option must update persisted state; menu-only placeholders are not allowed.
+
+### task_lists (JSON-state MVP)
+
+- `id`
+- `title`
+- `group`: `work`, `personal`, or `health`
+- `icon`: one of the supported Lucide asset names
+- `tone`: `blue`, `amber`, `green`, or `rose`
+
+Tasks, notes, and habits continue to reference a list through their existing client `area` field. Older saved lists are normalized with default group, icon, and tone values on load.
 
 ### daily_plans
 
@@ -172,7 +193,65 @@ Suggested `type` values:
 - `starts_at`
 - `ends_at`
 - `source`
+
+## Content layer migration
+
+The MVP currently persists one compatibility snapshot in `daily_os_states.state`.
+The snapshot row also carries a monotonic `revision`. Writes use
+`save_daily_os_state(expected_revision, next_state)` so a stale device cannot
+overwrite a newer cloud snapshot without an explicit conflict.
+This remains the fallback while high-value objects move to normalized tables.
+
+### note_folders
+
+- `id`
+- `user_id`
+- `parent_id` — optional nested folder
+- `title`
+- `icon`
+- `tone`
+- `position`
 - `created_at`
+- `updated_at`
+
+### notes
+
+- `id`
+- `user_id`
+- `folder_id` — nullable; null means “Без папки”
+- `title`
+- `body` — long-form plain text/Markdown content
+- `tags[]`
+- `source_type` — `manual`, `inbox`, `daily_review`, or future importer
+- `source_id`
+- `archived_at`
+- `created_at`
+- `updated_at`
+
+Indexes support folder sorting, full-text search, and tag filtering. RLS limits
+all reads and writes to `auth.uid() = user_id`. The executable schema lives in
+`db/content-schema.sql`.
+
+### Storage policy
+
+- Text belongs in Postgres, not Supabase Storage.
+- Binary attachments belong in a private Storage bucket and are linked from a
+  future `note_attachments` table.
+- `localStorage` is an offline cache, never the only source of truth.
+- During migration, the normalized content tables and the compatibility JSON
+  snapshot can coexist; object tables become authoritative one domain at a time.
+
+For Notes, the client now follows this order:
+
+1. Load the compatibility snapshot.
+2. Try `note_folders` and `notes`.
+3. If normalized rows exist, use them as the Notes source of truth.
+4. If the tables exist but are empty, migrate snapshot content into them.
+5. If the tables do not exist yet, continue snapshot sync without breaking local work.
+
+`settings.notesNormalizedAt` records a completed migration. After that marker is
+set, an empty `notes` table means the user intentionally has no notes; legacy
+snapshot content must not be restored.
 
 Calendar events are read-only constraints in MVP.
 

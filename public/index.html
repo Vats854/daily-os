@@ -6,7 +6,9 @@
     <meta name="theme-color" content="#ffffff" />
     <title>Second Brain</title>
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/styles.css?v=77" />
+    <link rel="stylesheet" href="/styles.css?v=129" />
+    <link rel="stylesheet" href="/task-core.css?v=129" />
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.19/index.global.min.js"></script>
   </head>
   <body data-auth="checking">
     <section class="auth-gate" id="authGate" aria-label="Вход в Daily OS">
@@ -28,7 +30,105 @@
       </div>
     </section>
 
-    <div class="app-shell">
+    <div class="simple-app" id="simpleApp" aria-label="Daily OS" data-foundation="task-core">
+      <aside class="simple-icon-rail" aria-label="Модули">
+        <button type="button" data-simple-module="capture" aria-label="Входящие" title="Входящие">
+          <img src="/icons/inbox.svg" alt="" />
+        </button>
+        <span class="simple-module-divider" aria-hidden="true"></span>
+        <button type="button" data-simple-module="tasks" aria-label="Задачи" title="Задачи">
+          <img src="/icons/list-todo.svg" alt="" />
+        </button>
+        <button type="button" data-simple-module="calendar" aria-label="Календарь" title="Календарь">
+          <img src="/icons/calendar-days.svg" alt="" />
+        </button>
+        <button type="button" data-simple-module="habits" aria-label="Привычки" title="Привычки">
+          <img src="/icons/circle-check-big.svg" alt="" />
+        </button>
+        <button type="button" data-simple-module="focus" aria-label="Фокус" title="Фокус">
+          <img src="/icons/timer.svg" alt="" />
+        </button>
+        <span class="simple-module-divider" aria-hidden="true"></span>
+        <button type="button" data-simple-module="notes" aria-label="Заметки" title="Заметки">
+          <img src="/icons/notebook-pen.svg" alt="" />
+        </button>
+        <button type="button" data-simple-module="projects" aria-label="Проекты" title="Проекты">
+          <img src="/icons/diamond.svg" alt="" />
+        </button>
+        <button type="button" data-simple-module="log" aria-label="Журнал" title="Журнал">
+          <img src="/icons/history.svg" alt="" />
+        </button>
+        <span class="simple-module-spacer" aria-hidden="true"></span>
+        <button type="button" data-simple-module="search" aria-label="Поиск" title="Поиск">
+          <img src="/icons/search.svg" alt="" />
+        </button>
+      </aside>
+
+      <aside class="simple-list-rail" aria-label="Списки">
+        <div class="simple-account">
+          <span class="brand-mark"></span>
+          <div>
+            <strong>Daily OS</strong>
+            <button class="simple-sync-toggle" id="simpleSyncToggle" type="button" aria-label="Проверить синхронизацию" aria-expanded="false">
+              <span class="simple-sync-dot" aria-hidden="true"></span><small id="simpleSyncStatus">local</small>
+            </button>
+          </div>
+          <button class="simple-appearance-toggle" id="simpleAppearanceToggle" type="button" aria-label="Настроить оформление" aria-expanded="false">
+            <img src="/icons/ellipsis.svg" alt="" />
+          </button>
+          <div class="simple-appearance-menu" id="simpleAppearanceMenu" hidden>
+            <span>Палитра</span>
+            <div class="appearance-options">
+              <button type="button" data-appearance-theme="sage"><i class="appearance-swatch sage"></i>Sage</button>
+              <button type="button" data-appearance-theme="sky"><i class="appearance-swatch sky"></i>Sky</button>
+              <button type="button" data-appearance-theme="clay"><i class="appearance-swatch clay"></i>Clay</button>
+            </div>
+            <span>Шрифт</span>
+            <div class="appearance-options font-options">
+              <button type="button" data-appearance-font="clean">Clean</button>
+              <button type="button" data-appearance-font="soft">Soft</button>
+              <button type="button" data-appearance-font="editorial">Editorial</button>
+            </div>
+          </div>
+        </div>
+        <nav class="simple-nav" id="simpleNav"></nav>
+      </aside>
+
+      <main class="simple-main" aria-label="Рабочая область">
+        <header class="simple-main-head">
+          <div>
+            <h1 id="simpleTitle">Сегодня</h1>
+            <p id="simpleSubtitle">Чистый список задач и заметок.</p>
+          </div>
+          <div class="simple-head-actions">
+            <button class="simple-mobile-sync-toggle" id="simpleMobileSyncToggle" type="button" aria-label="Проверить синхронизацию" aria-expanded="false">
+              <span class="simple-sync-dot" aria-hidden="true"></span>
+            </button>
+            <div class="simple-search-shell">
+              <img src="/icons/search.svg" alt="" />
+              <input id="simpleSearch" type="search" autocomplete="off" placeholder="Поиск" aria-label="Поиск по задачам и заметкам" />
+              <div class="simple-search-results" id="simpleSearchResults" hidden></div>
+            </div>
+            <button class="secondary-button" id="simpleAuthButton" type="button">Войти</button>
+            <button class="secondary-button" id="simpleSignOutButton" type="button">Выйти</button>
+          </div>
+        </header>
+
+        <form class="simple-composer" id="simpleComposer">
+          <input id="simpleComposerInput" type="text" placeholder="+ Добавить задачу или заметку" />
+          <button class="primary-button" type="submit">Добавить</button>
+        </form>
+
+        <div class="simple-list" id="simpleList"></div>
+      </main>
+
+      <aside class="simple-detail" id="simpleDetail" aria-label="Параметры"></aside>
+      <div class="simple-sync-panel" id="simpleSyncPanel" hidden></div>
+      <input id="simpleBackupInput" type="file" accept="application/json,.json" hidden />
+      <div class="simple-toast-layer" id="simpleToastLayer" aria-live="polite"></div>
+    </div>
+
+    <div class="app-shell legacy-app" hidden inert aria-hidden="true">
       <aside class="sidebar" aria-label="Навигация">
         <div class="brand">
           <span class="brand-mark"></span>
@@ -57,6 +157,18 @@
           <button class="nav-button" data-view="board" title="Доска" aria-label="Доска">
             <span class="nav-icon">▦</span>
             <span class="nav-label">Доска</span>
+          </button>
+          <button class="nav-button" data-view="focus" title="Фокус" aria-label="Фокус">
+            <span class="nav-icon">◉</span>
+            <span class="nav-label">Фокус</span>
+          </button>
+          <button class="nav-button" data-view="habits" title="Привычки" aria-label="Привычки">
+            <span class="nav-icon">◷</span>
+            <span class="nav-label">Привычки</span>
+          </button>
+          <button class="nav-button" data-view="notes" title="Заметки" aria-label="Заметки">
+            <span class="nav-icon">□</span>
+            <span class="nav-label">Заметки</span>
           </button>
           <button class="nav-button" data-view="log" title="Лог" aria-label="Лог">
             <span class="nav-icon">≡</span>
@@ -99,12 +211,12 @@
           <div class="inbox-layout">
             <section class="panel">
               <div class="panel-header">
-                <span class="label">AI Inbox</span>
-                <span class="pill" id="autonomyLabel">autonomous</span>
+                <span class="label">Inbox</span>
+                <span class="pill" id="autonomyLabel">авто-разбор</span>
               </div>
               <form id="inboxForm" class="inbox-form">
                 <textarea id="inboxText" rows="5" placeholder="Мысль, задача, перенос, состояние, заметка"></textarea>
-                <button class="primary-button" type="submit">Разобрать</button>
+                <button class="primary-button" type="submit">Сохранить и разложить</button>
               </form>
             </section>
 
@@ -148,41 +260,14 @@
               <form class="today-capture-card" id="todayCaptureForm">
                 <div>
                   <span class="label">Быстрый inbox</span>
-                  <p>Скинь мысль, задачу или перенос, не уходя с плана дня.</p>
+                  <p>Сохраняет текст и показывает, куда он попал: задача, заметка или проект.</p>
                 </div>
                 <div class="today-capture-row">
                   <textarea id="todayCaptureText" rows="2" placeholder="Например: перенести тренировку, записать идею, добавить задачу"></textarea>
-                  <button class="primary-button" type="submit">Разобрать</button>
+                  <button class="primary-button" type="submit">Сохранить</button>
                 </div>
+                <div class="capture-result" id="todayCaptureResult" hidden></div>
               </form>
-            </section>
-
-            <section class="today-ritual-strip" aria-label="Ритуалы дня">
-              <div class="ritual-strip-head">
-                <span class="label">Ритуалы</span>
-                <div class="ritual-actions">
-                  <strong id="ritualScore">0%</strong>
-                  <button class="text-button" id="addHabitToggle" type="button">+ habit</button>
-                </div>
-              </div>
-              <form class="habit-composer is-hidden" id="habitComposer">
-                <input id="habitTitle" type="text" placeholder="Новая привычка" />
-                <select id="habitArea" aria-label="Область привычки">
-                  <option value="personal">личное</option>
-                  <option value="health">здоровье</option>
-                  <option value="work">работа</option>
-                  <option value="learning">обучение</option>
-                  <option value="admin">админ</option>
-                </select>
-                <select id="habitGroup" aria-label="Время привычки">
-                  <option value="morning">morning</option>
-                  <option value="afternoon">afternoon</option>
-                  <option value="night">night</option>
-                  <option value="anytime">anytime</option>
-                </select>
-                <button class="secondary-button" type="submit">Добавить</button>
-              </form>
-              <div class="habit-list" id="habitList"></div>
             </section>
 
             <div class="day-plan-grid today-single-plan">
@@ -195,7 +280,7 @@
                 <section class="unscheduled-lane" aria-label="Задачи без блока">
                   <div class="table-footer">
                     <form class="task-composer" id="quickTaskForm">
-                      <input id="quickTaskTitle" type="text" placeholder="+ Добавить задачу в Today" />
+                      <input id="quickTaskTitle" type="text" placeholder="+ Добавить задачу на сегодня" />
                       <button class="secondary-button" type="submit">Добавить</button>
                     </form>
                   </div>
@@ -219,6 +304,56 @@
           </div>
         </section>
 
+        <section class="view" id="habitsView" aria-labelledby="viewTitle">
+          <div class="habits-layout">
+            <section class="panel habits-panel">
+              <div class="panel-header">
+                <div>
+                  <span class="label">Habit tracker</span>
+                  <p class="panel-help">Отдельный трекер ритуалов. В дневном плане привычки не смешиваются с задачами.</p>
+                </div>
+                <div class="ritual-actions">
+                  <strong id="ritualScore">0%</strong>
+                  <button class="secondary-button" id="addHabitToggle" type="button">+ habit</button>
+                </div>
+              </div>
+              <form class="habit-composer is-hidden" id="habitComposer">
+                <input id="habitTitle" type="text" placeholder="Новая привычка" />
+                <select id="habitArea" aria-label="Область привычки">
+                  <option value="personal">личное</option>
+                  <option value="health">здоровье</option>
+                  <option value="work">работа</option>
+                  <option value="learning">обучение</option>
+                  <option value="admin">админ</option>
+                </select>
+                <select id="habitGroup" aria-label="Время привычки">
+                  <option value="morning">morning</option>
+                  <option value="afternoon">afternoon</option>
+                  <option value="night">night</option>
+                  <option value="anytime">anytime</option>
+                </select>
+                <button class="secondary-button" type="submit">Добавить</button>
+              </form>
+              <div class="habit-list habits-board" id="habitList"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="notesView" aria-labelledby="viewTitle">
+          <div class="notes-layout">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <span class="label">Заметки</span>
+                  <p class="panel-help">Сюда попадают мысли, контекст дня, health-сигналы и записи из inbox, которые не стали задачами.</p>
+                </div>
+                <span class="pill" id="notesCount">0</span>
+              </div>
+              <div class="notes-list" id="notesList"></div>
+            </section>
+          </div>
+        </section>
+
         <section class="view" id="weekView" aria-labelledby="viewTitle">
           <div class="week-layout">
             <section class="panel">
@@ -234,7 +369,7 @@
                 <span class="label">Задачи недели</span>
                 <span class="pill">this week</span>
               </div>
-              <p class="panel-help">Конкретные действия, которые двигают недельные фокусы и могут перейти в Today.</p>
+              <p class="panel-help">Конкретные действия, которые двигают недельные фокусы и могут перейти в Сегодня.</p>
               <div class="task-list compact week-task-list" id="weekTaskList"></div>
             </section>
             <section class="panel wide-panel">
@@ -272,6 +407,10 @@
           <div class="board" id="taskBoard"></div>
         </section>
 
+        <section class="view" id="focusView" aria-labelledby="viewTitle">
+          <div class="focus-workspace" id="focusWorkspace"></div>
+        </section>
+
         <section class="view" id="logView" aria-labelledby="viewTitle">
           <div class="log-layout">
             <section class="panel">
@@ -288,12 +427,12 @@
       <aside class="app-inspector" aria-label="Инспектор выбранного объекта">
         <div class="inspector-shell-label">
           <span class="label">Inspector</span>
-          <span class="pill" id="inspectorMode">selected object</span>
+          <span class="pill" id="inspectorMode">выбранный объект</span>
         </div>
         <div id="appInspectorContent"></div>
       </aside>
     </div>
 
-    <script src="/app.js?v=77" type="module"></script>
+    <script src="/app.js?v=129" type="module"></script>
   </body>
 </html>
