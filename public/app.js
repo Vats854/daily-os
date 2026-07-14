@@ -1854,11 +1854,27 @@ function getSelectedInboxItem() {
 
 function inboxStatusLabel(status) {
   return {
-    open: "raw",
-    processed: "processed",
-    needs_review: "review",
-    archived: "archived"
-  }[status] || status || "raw";
+    open: "Не обработано",
+    processed: "Сохранено",
+    needs_review: "Нужно проверить",
+    archived: "Архив"
+  }[status] || status || "Не обработано";
+}
+
+function inboxLinkedTypeLabel(item) {
+  return {
+    task: "Задача",
+    project: "Проект",
+    note: "Заметка"
+  }[item?.linkedType] || labelForKind(item?.parsed?.kind || "note");
+}
+
+function inboxDestinationLabel(item, linked = getInboxLinkedObject(item)) {
+  if (!linked) return "Решение ещё не принято";
+  if (item.linkedType === "task") return `${statusLabel(linked.status)} · ${listLabel(linked.area)}`;
+  if (item.linkedType === "project") return `Проекты · ${listLabel(linked.area)}`;
+  if (item.linkedType === "note") return `Заметки · ${noteFolderLabel(linked.folderId)}`;
+  return "Daily OS";
 }
 
 function getInboxLinkedObject(item) {
@@ -1976,8 +1992,8 @@ function renderInboxInspector(item) {
   if (!item) {
     return `<section class="inspector-object-card accent-sky">
       <span class="pill">Inbox</span>
-      <h2>Разобрать входящие</h2>
-      <p>Добавь мысль или задачу слева. Здесь появятся действия: превратить в задачу, заметку или открыть связанный объект.</p>
+      <h2>Сохрани мысль</h2>
+      <p>Ассистент определит тип записи и покажет, куда она попала. Результат всегда можно открыть отсюда.</p>
     </section>`;
   }
 
@@ -1993,14 +2009,13 @@ function renderInboxInspector(item) {
       <span class="tag">${escapeHtml(listLabel(item.parsed?.area || "personal"))}</span>
     </div>
     ${linked ? `<div class="inbox-linked-object">
-      <span>Связано</span>
+      <span>${escapeHtml(inboxLinkedTypeLabel(item))} · ${escapeHtml(inboxDestinationLabel(item, linked))}</span>
       <strong>${escapeHtml(linked.title || linked.text || "Заметка")}</strong>
     </div>` : ""}
     <div class="inbox-inspector-actions">
-      ${linked ? `<button class="secondary-button" type="button" data-inbox-action="open-linked">Открыть объект</button>` : ""}
-      <button class="primary-button" type="button" data-inbox-action="task-today">В Сегодня</button>
-      <button class="secondary-button" type="button" data-inbox-action="task-backlog">В backlog</button>
-      <button class="secondary-button" type="button" data-inbox-action="note">Заметкой</button>
+      ${linked ? `<button class="primary-button" type="button" data-inbox-action="open-linked">Открыть ${escapeHtml(inboxLinkedTypeLabel(item).toLowerCase())}</button>` : ""}
+      ${item.linkedType !== "task" ? `<button class="secondary-button" type="button" data-inbox-action="task-today">Задача на сегодня</button><button class="secondary-button" type="button" data-inbox-action="task-backlog">Задача на потом</button>` : ""}
+      ${item.linkedType !== "note" ? `<button class="secondary-button" type="button" data-inbox-action="note">Сохранить заметкой</button>` : ""}
       <button class="ghost-button danger" type="button" data-inbox-action="delete">Удалить</button>
     </div>
   </section>
@@ -2195,12 +2210,12 @@ function renderCaptureResult() {
   root.hidden = false;
   root.innerHTML = `<article class="capture-result-card" data-inbox-id="${escapeHtml(item.id)}">
     <div>
-      <span class="label">Результат сохранения</span>
-      <strong>Запись сохранена как ${escapeHtml(kindLabel)}</strong>
+      <span class="label">${escapeHtml(inboxStatusLabel(item.status))}</span>
+      <strong>${linked ? `${escapeHtml(inboxLinkedTypeLabel(item))} · ${escapeHtml(inboxDestinationLabel(item, linked))}` : `Рекомендация: ${escapeHtml(kindLabel)}`}</strong>
       <p>${escapeHtml(linked?.title || linked?.text || item.parsed?.title || item.text)}</p>
     </div>
     <div class="capture-result-actions">
-      <button type="button" class="secondary-button" data-inbox-action="open-linked">${linked ? "Открыть" : "Открыть inbox"}</button>
+      ${linked ? `<button type="button" class="secondary-button" data-inbox-action="open-linked">Открыть</button>` : ""}
       <button type="button" class="ghost-button" data-action="clear-capture-result">Скрыть</button>
     </div>
   </article>`;
@@ -2477,7 +2492,7 @@ function renderSimpleApp() {
 
   const placeholder = meta.kind === "inbox" ? "Мысль, задача, перенос, идея или контекст" : meta.kind === "notes" ? "+ Новая заметка" : meta.kind === "habits" ? "+ Новая привычка" : meta.kind === "projects" ? "+ Новый проект" : "+ Новая задача";
   document.querySelector("#simpleComposerInput").placeholder = placeholder;
-  document.querySelector("#simpleComposer button[type='submit']").textContent = meta.kind === "inbox" ? "Разобрать" : ["notes", "habits", "projects"].includes(meta.kind) ? "Создать" : "Добавить";
+  document.querySelector("#simpleComposer button[type='submit']").textContent = meta.kind === "inbox" ? "Сохранить" : ["notes", "habits", "projects"].includes(meta.kind) ? "Создать" : "Добавить";
   document.querySelector("#simpleComposer").hidden = ["calendar", "focus", "log"].includes(meta.kind);
   if (calendarInstance || calendarTaskDraggable) destroyInteractiveCalendar();
   document.querySelector("#simpleList").innerHTML = renderSimpleMainList(meta);
@@ -3189,11 +3204,11 @@ function renderSimpleInboxRow(item) {
   const kindLabel = labelForKind(item.parsed?.kind || "note");
   return `<article class="simple-inbox-row ${item.status === "needs_review" ? "needs-review" : ""}" data-inbox-id="${escapeHtml(item.id)}">
     <div class="simple-inbox-state"><span>${escapeHtml(inboxStatusLabel(item.status))}</span><small>${escapeHtml(kindLabel)}</small></div>
-    <div class="simple-inbox-copy"><strong>${escapeHtml(item.parsed?.title || item.text)}</strong><p>${escapeHtml(item.text)}</p><small>${escapeHtml(item.parsed?.reason || (linked ? `Сохранено как ${item.linkedType}` : "Ожидает решения"))}</small></div>
+    <div class="simple-inbox-copy"><strong>${escapeHtml(item.parsed?.title || item.text)}</strong><p>${escapeHtml(item.text)}</p><small>${linked ? `${escapeHtml(inboxLinkedTypeLabel(item))} · ${escapeHtml(inboxDestinationLabel(item, linked))}` : escapeHtml(item.parsed?.reason || "Ожидает решения")}</small></div>
     <div class="simple-inbox-actions">
-      ${linked ? `<button type="button" data-inbox-action="open-linked">Открыть</button>` : ""}
-      <button type="button" data-inbox-action="task-today">В Сегодня</button>
-      ${item.linkedType !== "note" ? `<button type="button" data-inbox-action="note">Заметкой</button>` : ""}
+      ${linked ? `<button type="button" class="primary" data-inbox-action="open-linked">Открыть</button>` : ""}
+      ${item.linkedType !== "task" ? `<button type="button" data-inbox-action="task-today">Задача сегодня</button>` : ""}
+      ${item.linkedType !== "note" ? `<button type="button" data-inbox-action="note">Сохранить заметкой</button>` : ""}
       <button type="button" class="danger-text" data-inbox-action="delete">Удалить</button>
     </div>
   </article>`;
@@ -4156,7 +4171,7 @@ function renderSimpleSearchResults(query) {
   const root = document.querySelector("#simpleSearchResults");
   if (!root) return;
   const needle = String(query || "").trim();
-  const results = searchDailyOs(needle).filter((item) => item.type === "task" || item.type === "note");
+  const results = searchDailyOs(needle).filter((item) => ["task", "note", "inbox"].includes(item.type));
   root.hidden = !needle;
   root.innerHTML = !needle
     ? ""
@@ -4757,6 +4772,8 @@ document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
   if (noteRow) {
     state.ui.selectedNoteId = noteRow.dataset.noteId;
     state.ui.selectedTaskId = null;
+    state.ui.simpleModule = "notes";
+    state.settings.activeView = "notes";
     saveState();
     return;
   }
@@ -4818,7 +4835,7 @@ document.querySelector("#simpleComposer")?.addEventListener("submit", async (eve
   const meta = simpleViewMeta();
   if (meta.kind === "inbox") {
     input.disabled = true;
-    input.placeholder = "Ассистент разбирает входящее...";
+    input.placeholder = "Ассистент сохраняет запись...";
     await processInbox(text);
     input.disabled = false;
     input.placeholder = "Мысль, задача, перенос, идея или контекст";
@@ -4866,6 +4883,14 @@ document.querySelector("#simpleSearchResults")?.addEventListener("click", (event
     state.ui.selectedNoteId = result.dataset.simpleSearchId;
     const note = state.notes.find((item) => item.id === result.dataset.simpleSearchId);
     state.ui.selectedNoteFolderId = note?.folderId || "";
+  }
+  if (result.dataset.simpleSearchType === "inbox") {
+    const inboxItem = state.inboxItems.find((item) => item.id === result.dataset.simpleSearchId);
+    state.ui.selectedInboxId = inboxItem?.id || null;
+    state.ui.simpleModule = "capture";
+    state.settings.activeView = "inbox";
+    state.ui.selectedTaskId = null;
+    state.ui.selectedNoteId = null;
   }
   simpleSearchQuery = "";
   const searchInput = document.querySelector("#simpleSearch");

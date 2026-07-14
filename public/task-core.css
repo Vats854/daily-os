@@ -565,6 +565,7 @@ body[data-auth] .simple-app[data-module="calendar"].detail-open {
 .simple-inbox-row.needs-review .simple-inbox-state span { background: #fff2dd; color: #8a5c17; }
 .simple-inbox-copy { min-width: 0; }.simple-inbox-copy strong { display: block; font-size: 14px; }.simple-inbox-copy p { margin: 5px 0; color: var(--core-text); font-size: 12px; line-height: 1.45; }.simple-inbox-copy small { color: var(--core-muted); font-size: 11px; line-height: 1.4; }
 .simple-inbox-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; max-width: 250px; }.simple-inbox-actions button { min-height: 30px; padding: 0 8px; border: 1px solid var(--core-line); border-radius: 6px; background: var(--core-surface); color: var(--core-text); font-size: 10px; font-weight: 720; }.simple-inbox-actions button:hover { background: var(--core-blue-soft); }.simple-inbox-actions .danger-text { color: var(--core-danger); }
+.simple-inbox-actions button.primary { border-color: var(--core-ink); background: var(--core-ink); color: #fff; }
 
 .simple-row .simple-pin-mark,
 .simple-row .simple-priority-flag {
