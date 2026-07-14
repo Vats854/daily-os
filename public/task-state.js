@@ -158,6 +158,31 @@ export function completeTaskRecord(item, { now = new Date().toISOString() } = {}
   return item;
 }
 
+export function restoreTaskRecord(item, { now = new Date().toISOString() } = {}) {
+  if (!item) return null;
+  item.status = item.previousStatus || "today";
+  item.updatedAt = now;
+  return item;
+}
+
+export function duplicateTaskRecord(item, {
+  id = crypto.randomUUID(),
+  now = new Date().toISOString(),
+  subtaskIdFactory = () => crypto.randomUUID()
+} = {}) {
+  if (!item) return null;
+  const duplicate = structuredClone(item);
+  duplicate.id = id;
+  duplicate.title = `Копия — ${item.title}`;
+  duplicate.status = item.status === "done" ? (item.previousStatus || "today") : item.status;
+  duplicate.previousStatus = duplicate.status;
+  duplicate.pinned = false;
+  duplicate.createdAt = now;
+  duplicate.updatedAt = now;
+  duplicate.subtasks = (duplicate.subtasks || []).map((subtask) => ({ ...subtask, id: subtaskIdFactory() }));
+  return duplicate;
+}
+
 export function createFocusSessionRecord({
   taskId,
   startedAt,

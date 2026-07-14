@@ -4,12 +4,14 @@ import {
   completeTaskRecord,
   createBackupPayload,
   createAuditRecord,
+  duplicateTaskRecord,
   createFocusSessionRecord,
   createInboxRecord,
   createTaskRecord,
   parseStateSnapshot,
   parseBackupPayload,
   resolveInboxRecord,
+  restoreTaskRecord,
   scheduleTaskRecord,
   serializeStateSnapshot,
   updateTaskRecord
@@ -67,6 +69,36 @@ test("task survives create, edit and reload", () => {
 
 test("invalid persisted snapshots are rejected", () => {
   assert.throws(() => parseStateSnapshot("[]"), /Invalid Daily OS state snapshot/);
+});
+
+test("completion restores the previous status", () => {
+  const task = createTaskRecord({ id: "task-restore", title: "Вернуть в неделю", status: "this_week", now: "2026-07-14T08:00:00.000Z" });
+  completeTaskRecord(task, { now: "2026-07-14T09:00:00.000Z" });
+  restoreTaskRecord(task, { now: "2026-07-14T09:05:00.000Z" });
+
+  assert.equal(task.status, "this_week");
+  assert.equal(task.previousStatus, "this_week");
+  assert.equal(task.updatedAt, "2026-07-14T09:05:00.000Z");
+});
+
+test("duplicate is independent and is not pinned automatically", () => {
+  const task = createTaskRecord({ id: "task-source", title: "Исходная задача", status: "today", now: "2026-07-14T08:00:00.000Z" });
+  task.pinned = true;
+  task.tags = ["core"];
+  task.subtasks = [{ id: "subtask-source", title: "Шаг", done: true }];
+
+  const duplicate = duplicateTaskRecord(task, {
+    id: "task-copy",
+    now: "2026-07-14T10:00:00.000Z",
+    subtaskIdFactory: () => "subtask-copy"
+  });
+
+  assert.equal(duplicate.id, "task-copy");
+  assert.equal(duplicate.title, "Копия — Исходная задача");
+  assert.equal(duplicate.pinned, false);
+  assert.deepEqual(duplicate.tags, ["core"]);
+  assert.equal(duplicate.subtasks[0].id, "subtask-copy");
+  assert.notEqual(duplicate.subtasks[0], task.subtasks[0]);
 });
 
 test("core daily workflow survives serialization and reload", () => {

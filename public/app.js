@@ -12,11 +12,13 @@ import {
 import {
   createBackupPayload,
   createTaskRecord,
+  duplicateTaskRecord,
   parseBackupPayload,
   parseStateSnapshot,
+  restoreTaskRecord,
   serializeStateSnapshot,
   updateTaskRecord
-} from "./task-state.js?v=129";
+} from "./task-state.js?v=132";
 
 const STORAGE_KEY = "second-brain-command-center:v1";
 const CONFLICT_BACKUP_KEY = "second-brain-command-center:conflict-backup";
@@ -4567,6 +4569,7 @@ document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
     const row = detailAction.closest('[data-simple-object="task"]');
     if (row && selectTask(row.dataset.taskId)) state.ui.taskMenuOpen = true;
     state.ui.taskMenuPosition = null;
+    state.ui.quickTagsOpen = false;
     state.ui.selectedNoteId = null;
     saveState();
     return;
@@ -4614,6 +4617,7 @@ document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
     state.ui.selectedNoteId = null;
     state.ui.taskMenuOpen = false;
     state.ui.taskMenuPosition = null;
+    state.ui.quickTagsOpen = false;
     saveState();
     return;
   }
@@ -4621,12 +4625,12 @@ document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
     const item = getSelectedTask();
     if (!item) return;
     stageUndo(item.status === "done" ? "Задача возвращена" : "Задача завершена");
-    if (item.status === "done") item.status = item.previousStatus || "today";
+    if (item.status === "done") restoreTaskRecord(item);
     else {
       item.previousStatus = item.status;
       item.status = "done";
+      item.updatedAt = new Date().toISOString();
     }
-    item.updatedAt = new Date().toISOString();
     saveState();
     return;
   }
@@ -4644,14 +4648,7 @@ document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
   if (detailAction?.dataset.simpleAction === "duplicate-task") {
     const item = getSelectedTask();
     if (!item) return;
-    const duplicate = structuredClone(item);
-    duplicate.id = crypto.randomUUID();
-    duplicate.title = "Копия — " + item.title;
-    duplicate.status = item.status === "done" ? (item.previousStatus || "today") : item.status;
-    duplicate.previousStatus = duplicate.status;
-    duplicate.createdAt = new Date().toISOString();
-    duplicate.updatedAt = duplicate.createdAt;
-    duplicate.subtasks = duplicate.subtasks.map((subtask) => ({ ...subtask, id: crypto.randomUUID() }));
+    const duplicate = duplicateTaskRecord(item);
     state.tasks.unshift(duplicate);
     selectTask(duplicate.id);
     state.ui.taskMenuOpen = false;
