@@ -1,4 +1,4 @@
-const CACHE_NAME = "second-brain-command-center-v132";
+const CACHE_NAME = "second-brain-command-center-v133";
 const ASSETS = [
   "/",
   "/index.html",
@@ -8,6 +8,9 @@ const ASSETS = [
   "/supabase-client.js",
   "/manifest.webmanifest",
   "/icon.svg",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/apple-touch-icon.png",
   "/icons/list-todo.svg",
   "/icons/notebook-pen.svg",
   "/icons/search.svg",

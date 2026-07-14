@@ -1,16 +1,22 @@
 {
-  "name": "Second Brain Command Center",
-  "short_name": "Second Brain",
-  "description": "PWA-first daily and weekly planning command center.",
+  "name": "Daily OS",
+  "short_name": "Daily OS",
+  "description": "Personal task, planning and focus workspace.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#ffffff",
+  "theme_color": "#2f6fed",
   "icons": [
     {
-      "src": "/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]

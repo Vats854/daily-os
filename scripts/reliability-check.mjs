@@ -22,7 +22,7 @@ const contracts = [
   ["unsafe legacy upsert is disabled", supabaseClient.includes("SYNC_UPGRADE_REQUIRED") && !supabaseClient.includes('.from("daily_os_states").upsert')],
   ["sync diagnostics are accessible", html.includes('id="simpleSyncToggle"') && html.includes('id="simpleSyncPanel"') && app.includes("renderSimpleSyncPanel")],
   ["sync retry uses the safe queue", app.includes('data-simple-sync-action="retry"') && app.includes("queueCloudSave({ immediate: true })")],
-  ["asset versions match", html.includes("styles.css?v=132") && html.includes("task-core.css?v=132") && html.includes("app.js?v=132") && worker.includes("v132")],
+  ["asset versions match", html.includes("styles.css?v=133") && html.includes("task-core.css?v=133") && html.includes("app.js?v=133") && worker.includes("v133")],
   ["open detail grid overrides authenticated shell", styles.includes('body[data-auth] .simple-app.detail-open')],
   ["notes grid overrides authenticated shell", styles.includes('body[data-auth] .simple-app[data-module="notes"]')],
   ["Inbox composer does not default to the first custom list", !app.includes('meta.area || state.ui?.simpleArea || taskLists()[0]?.id')],
