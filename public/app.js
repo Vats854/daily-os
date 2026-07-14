@@ -23,6 +23,8 @@ import {
 const STORAGE_KEY = "second-brain-command-center:v1";
 const CONFLICT_BACKUP_KEY = "second-brain-command-center:conflict-backup";
 const PRE_IMPORT_BACKUP_KEY = "second-brain-command-center:pre-import-backup";
+const PRE_HYDRATE_BACKUP_KEY = "second-brain-command-center:pre-hydrate-backup";
+const PENDING_CLOUD_SAVE_KEY = "second-brain-command-center:pending-cloud-save";
 const LAST_EXPORT_AT_KEY = "second-brain-command-center:last-export-at";
 const UNDO_TTL_MS = 12_000;
 const isLocalDev = ["127.0.0.1", "localhost", ""].includes(window.location.hostname);
@@ -865,10 +867,30 @@ async function hydrateCloudState(session) {
   try {
     const remote = await loadCloudState();
     if (remote?.state) {
-      state = normalizeState({ ...structuredClone(seedState), ...remote.state });
       cloudSync.revision = remote.revision !== null && remote.revision !== undefined && Number.isFinite(Number(remote.revision)) ? Number(remote.revision) : null;
       cloudSync.remoteUpdatedAt = remote.updated_at || null;
       cloudSync.legacyMode = Boolean(remote.legacy);
+
+      localStorage.setItem(PRE_HYDRATE_BACKUP_KEY, JSON.stringify({
+        savedAt: new Date().toISOString(),
+        userId,
+        state: structuredClone(state)
+      }));
+
+      let pendingLocal = null;
+      try {
+        pendingLocal = JSON.parse(localStorage.getItem(PENDING_CLOUD_SAVE_KEY) || "null");
+      } catch {
+        localStorage.removeItem(PENDING_CLOUD_SAVE_KEY);
+      }
+
+      if (pendingLocal?.userId === userId && pendingLocal.state) {
+        state = normalizeState({ ...structuredClone(seedState), ...pendingLocal.state });
+        applyCloudSaveResult(await saveCloudState(state, cloudSync.revision));
+        localStorage.removeItem(PENDING_CLOUD_SAVE_KEY);
+      } else {
+        state = normalizeState({ ...structuredClone(seedState), ...remote.state });
+      }
     } else {
       applyCloudSaveResult(await saveCloudState(state, 0));
     }
@@ -906,6 +928,11 @@ function queueCloudSave({ immediate = false } = {}) {
   if (!cloudSync.configured || !cloudSync.session) return;
   if (cloudSync.status === "conflict") return;
   cloudSync.pendingSnapshot = structuredClone(state);
+  localStorage.setItem(PENDING_CLOUD_SAVE_KEY, JSON.stringify({
+    savedAt: new Date().toISOString(),
+    userId: cloudSync.session.user?.id || "",
+    state: cloudSync.pendingSnapshot
+  }));
   window.clearTimeout(cloudSync.timer);
   cloudSync.status = "syncing";
   updateAuthUi();
@@ -924,6 +951,14 @@ async function flushCloudSave() {
     applyCloudSaveResult(stateResult);
     const contentResult = await saveCloudNotes(localSnapshot.noteFolders, localSnapshot.notes);
     cloudSync.contentAvailable = contentResult.available;
+    try {
+      const pendingLocal = JSON.parse(localStorage.getItem(PENDING_CLOUD_SAVE_KEY) || "null");
+      if (pendingLocal?.state && serializeStateSnapshot(pendingLocal.state) === serializeStateSnapshot(localSnapshot)) {
+        localStorage.removeItem(PENDING_CLOUD_SAVE_KEY);
+      }
+    } catch {
+      localStorage.removeItem(PENDING_CLOUD_SAVE_KEY);
+    }
     cloudSync.status = "synced";
     cloudSync.error = "";
   } catch (error) {
