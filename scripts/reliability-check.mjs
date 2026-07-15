@@ -25,6 +25,7 @@ const contracts = [
   ["focus controls are wired to the active shell", app.includes('document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>') && app.includes('event.target.closest("[data-sound-action]")')],
   ["live focus volume is wired", app.includes('event.target.closest(\'[data-focus-field="volume"]\')') && app.includes("focusRuntime.gain.gain.value")],
   ["habit schedule editor is wired", app.includes("data-habit-weekday") && app.includes("selectedHabitId") && styles.includes(".simple-habit-weekday-field")],
+  ["calendar grid actions save immediately", app.includes('persistCalendarBlock(block, { actionTitle: "Блок добавлен в календарь" })') && app.includes('persistCalendarBlock(block, { mode: "update", blockId, actionTitle })') && !app.includes("calendarPendingEdit")],
   ["cloud saves are serialized", app.includes("cloudSync.inFlight") && app.includes("cloudSync.pendingSnapshot") && /if \(cloudSync\.inFlight \|\| !cloudSync\.pendingSnapshot/.test(app)],
   ["rapid edits are coalesced", app.includes("cloudSync.pendingSnapshot = structuredClone(state)") && app.includes("window.setTimeout(flushCloudSave, 0)")],
   ["pending cloud edits survive reload", app.includes("PENDING_CLOUD_SAVE_KEY") && app.includes("PRE_HYDRATE_BACKUP_KEY")],

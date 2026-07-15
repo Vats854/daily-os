@@ -21,7 +21,7 @@ import {
   setTaskWorkflowStatus,
   serializeStateSnapshot,
   updateTaskRecord
-} from "./task-state.js?v=146";
+} from "./task-state.js?v=147";
 
 const STORAGE_KEY = "second-brain-command-center:v1";
 const CONFLICT_BACKUP_KEY = "second-brain-command-center:conflict-backup";
@@ -315,7 +315,6 @@ let calendarTaskDraggable = null;
 let calendarEngineFailed = false;
 let reminderTimers = [];
 const deliveredReminderKeys = new Set();
-let calendarPendingEdit = null;
 state.ui = state.ui || {};
 state.ui.selectedDayBlockIndex = Number.isInteger(state.ui.selectedDayBlockIndex) ? state.ui.selectedDayBlockIndex : 1;
 state.ui.selectedInboxId = state.ui.selectedInboxId || null;
@@ -2064,10 +2063,7 @@ function renderSimpleApp() {
       ? state.tasks.some((item) => item.id === state.ui?.selectedTaskId)
       : module === "habits"
         ? state.habits.some((item) => item.id === state.ui?.selectedHabitId)
-      : module === "calendar" && Boolean(
-          calendarPendingEdit?.draft?.id === state.ui?.selectedCalendarBlockId
-          || state.dailyPlan.timeBlocks.some((item) => item.id === state.ui?.selectedCalendarBlockId)
-        );
+      : module === "calendar" && state.dailyPlan.timeBlocks.some((item) => item.id === state.ui?.selectedCalendarBlockId);
   root.classList.toggle("detail-open", hasSelectedDetail);
   document.querySelector("#simpleToastLayer").innerHTML = renderSimpleToasts();
   renderSimpleSearchResults(simpleSearchQuery);
@@ -2300,7 +2296,7 @@ function renderCalendarWorkspace() {
         <button type="button" data-calendar-action="next" aria-label="Следующая неделя">›</button>
         <strong>${escapeHtml(monthFormatter.format(weekStart))} — ${escapeHtml(monthFormatter.format(weekEnd))}</strong>
       </div>
-      <span class="calendar-readonly">Протяни по сетке, проверь черновик и сохрани · внешние события только чтение</span>
+      <span class="calendar-readonly">Протяни по сетке — блок сохранится автоматически · внешние события только чтение</span>
     </header>
     <section class="calendar-unscheduled" aria-label="Задачи без времени">
       <div><span class="label">Без времени</span><small>${unscheduled.length} задач</small></div>
@@ -2378,38 +2374,21 @@ function calendarBlockEndDate(block, occurrenceDate) {
 }
 
 function calendarDraftBlocks() {
-  const blocks = state.dailyPlan.timeBlocks.map((block) => {
-    if (calendarPendingEdit?.mode === "update" && calendarPendingEdit.blockId === block.id) {
-      return calendarPendingEdit.draft;
-    }
-    return block;
-  });
-  if (calendarPendingEdit?.mode === "create") blocks.push(calendarPendingEdit.draft);
-  return blocks;
+  return state.dailyPlan.timeBlocks;
 }
 
-function openCalendarDraft(block, mode = "update", actionTitle = "Блок календаря изменён", linkedTaskId = "") {
-  calendarPendingEdit = {
-    mode,
-    blockId: mode === "update" ? block.id : "",
-    linkedTaskId,
-    actionTitle,
-    draft: structuredClone(block)
-  };
+function openCalendarBlock(block) {
   state.ui.selectedCalendarBlockId = block.id;
-  window.requestAnimationFrame(render);
+  render();
 }
 
-function cancelCalendarDraft() {
-  calendarPendingEdit = null;
+function closeCalendarBlock() {
   state.ui.selectedCalendarBlockId = null;
   render();
 }
 
-function saveCalendarDraft() {
-  if (!calendarPendingEdit?.draft) return;
-  const pending = calendarPendingEdit;
-  const block = structuredClone(pending.draft);
+function persistCalendarBlock(blockInput, { mode = "create", blockId = "", linkedTaskId = "", actionTitle = "Блок календаря изменён" } = {}) {
+  const block = structuredClone(blockInput);
   block.title = String(block.title || "").trim() || "Новый блок";
   block.endDate = block.endDate && block.endDate >= block.date ? block.endDate : block.date;
   if (timeMinutes(block.end) <= timeMinutes(block.start)) {
@@ -2418,15 +2397,15 @@ function saveCalendarDraft() {
     block.end = calendarTimeValue(adjustedEnd);
   }
   block.updatedAt = new Date().toISOString();
-  if (pending.mode === "create") {
+  if (mode === "create") {
     state.dailyPlan.timeBlocks.push(block);
   } else {
-    const index = state.dailyPlan.timeBlocks.findIndex((item) => item.id === pending.blockId);
-    if (index < 0) return cancelCalendarDraft();
+    const index = state.dailyPlan.timeBlocks.findIndex((item) => item.id === blockId);
+    if (index < 0) return false;
     state.dailyPlan.timeBlocks[index] = block;
   }
-  if (pending.linkedTaskId) {
-    const taskItem = state.tasks.find((item) => item.id === pending.linkedTaskId);
+  if (linkedTaskId) {
+    const taskItem = state.tasks.find((item) => item.id === linkedTaskId);
     if (taskItem) {
       setTaskPlanBucket(taskItem, "today");
       taskItem.updatedAt = new Date().toISOString();
@@ -2434,10 +2413,10 @@ function saveCalendarDraft() {
   }
   const days = calendarDateDistance(block.date, block.endDate || block.date) + 1;
   const dateSummary = days > 1 ? `${block.date} — ${block.endDate}, ежедневно` : block.date;
-  state.assistantActions.unshift(action(pending.actionTitle, `${block.title}: ${dateSummary}, ${block.start}–${block.end}.`, "confirmed"));
-  calendarPendingEdit = null;
-  state.ui.selectedCalendarBlockId = null;
+  state.assistantActions.unshift(action(actionTitle, `${block.title}: ${dateSummary}, ${block.start}–${block.end}.`, "confirmed"));
+  state.ui.selectedCalendarBlockId = block.id;
   saveState();
+  return true;
 }
 
 async function deliverSystemReminder({ key, title, body, url = "/" }) {
@@ -2541,7 +2520,7 @@ function calendarEngineEvents() {
     editable: true,
     startEditable: true,
     durationEditable: true,
-    classNames: ["daily-calendar-event", "is-internal", calendarPendingEdit?.draft?.id === block.id ? "is-draft" : "", `tone-${calendarTone(categoryForBlock(block).area)}`].filter(Boolean),
+    classNames: ["daily-calendar-event", "is-internal", `tone-${calendarTone(categoryForBlock(block).area)}`],
     extendedProps: {
       kind: "block",
       blockId: block.id,
@@ -2553,9 +2532,7 @@ function calendarEngineEvents() {
 
 function updateCalendarBlock(info, actionTitle) {
   const blockId = info.event.extendedProps.blockId;
-  const sourceBlock = calendarPendingEdit?.draft?.id === blockId
-    ? calendarPendingEdit.draft
-    : state.dailyPlan.timeBlocks.find((item) => item.id === blockId);
+  const sourceBlock = state.dailyPlan.timeBlocks.find((item) => item.id === blockId);
   const block = sourceBlock ? structuredClone(sourceBlock) : null;
   if (!block || !info.event.start || !info.event.end) {
     info.revert?.();
@@ -2575,7 +2552,7 @@ function updateCalendarBlock(info, actionTitle) {
     block.endDate = calendarShiftDate(originalEnd, dayShift);
   }
   info.revert?.();
-  openCalendarDraft(block, state.dailyPlan.timeBlocks.some((item) => item.id === block.id) ? "update" : "create", actionTitle);
+  persistCalendarBlock(block, { mode: "update", blockId, actionTitle });
 }
 
 function destroyInteractiveCalendar() {
@@ -2627,7 +2604,7 @@ function mountInteractiveCalendar() {
       const block = timeBlock(calendarTimeValue(selectionInfo.start), endTime, "Новый блок", "", "draft");
       block.date = localDateIso(selectionInfo.start);
       block.endDate = localDateIso(end);
-      openCalendarDraft(block, "create", "Блок добавлен в календарь");
+      persistCalendarBlock(block, { actionTitle: "Блок добавлен в календарь" });
     },
     eventAllow(dropInfo, draggedEvent) {
       return draggedEvent.extendedProps.kind !== "external";
@@ -2641,10 +2618,8 @@ function mountInteractiveCalendar() {
     eventClick(info) {
       if (info.event.extendedProps.kind !== "block") return;
       const blockId = info.event.extendedProps.blockId;
-      const block = calendarPendingEdit?.draft?.id === blockId
-        ? calendarPendingEdit.draft
-        : state.dailyPlan.timeBlocks.find((item) => item.id === blockId);
-      if (block) openCalendarDraft(block, state.dailyPlan.timeBlocks.some((item) => item.id === blockId) ? "update" : "create");
+      const block = state.dailyPlan.timeBlocks.find((item) => item.id === blockId);
+      if (block) openCalendarBlock(block);
     },
     eventReceive(info) {
       const taskId = info.event.extendedProps.taskId;
@@ -2659,7 +2634,7 @@ function mountInteractiveCalendar() {
       block.endDate = date;
       block.taskId = taskItem.id;
       info.event.remove();
-      openCalendarDraft(block, "create", "Задача поставлена в календарь", taskItem.id);
+      persistCalendarBlock(block, { linkedTaskId: taskItem.id, actionTitle: "Задача поставлена в календарь" });
     }
     });
     calendarInstance.render();
@@ -2920,14 +2895,12 @@ function renderSimpleDetail(meta) {
     </section>`;
   }
   const calendarBlock = module === "calendar"
-    ? (calendarPendingEdit?.draft?.id === state.ui?.selectedCalendarBlockId
-        ? calendarPendingEdit.draft
-        : state.dailyPlan.timeBlocks.find((item) => item.id === state.ui?.selectedCalendarBlockId)) || null
+    ? state.dailyPlan.timeBlocks.find((item) => item.id === state.ui?.selectedCalendarBlockId) || null
     : null;
   if (calendarBlock) {
     return `<section class="simple-detail-card calendar-block-editor" data-calendar-block-id="${escapeHtml(calendarBlock.id)}">
       <div class="simple-detail-head">
-        <span class="label">${calendarPendingEdit ? "Несохранённый блок" : "Блок календаря"}</span>
+        <span class="label">Блок календаря</span>
         <button type="button" class="simple-detail-close" data-simple-action="close-calendar-detail" aria-label="Закрыть блок"><img src="/icons/x.svg" alt="" /></button>
       </div>
       <label><span>Название</span><input data-calendar-block-field="title" value="${escapeHtml(calendarBlock.title)}" /></label>
@@ -2950,12 +2923,8 @@ function renderSimpleDetail(meta) {
       </div>
       <label><span>Комментарий</span><textarea data-calendar-block-field="nextAction" placeholder="Что должно произойти в этом блоке">${escapeHtml(calendarBlock.nextAction || "")}</textarea></label>
       ${calendarBlock.reminderMinutes !== null && calendarBlock.reminderMinutes !== undefined ? `<p class="calendar-notification-state">${escapeHtml(notificationPermissionLabel())}</p>` : ""}
-      <p class="calendar-block-hint">Диапазон дат создаёт одинаковый блок ${escapeHtml(calendarBlock.start)}–${escapeHtml(calendarBlock.end)} в каждом выбранном дне. Изменения попадут в календарь только после сохранения.</p>
-      <div class="calendar-block-actions">
-        <button type="button" class="simple-secondary-button" data-simple-action="cancel-calendar-block">Отмена</button>
-        <button type="button" class="simple-primary-button" data-simple-action="save-calendar-block">Сохранить блок</button>
-      </div>
-      ${calendarPendingEdit?.mode === "update" ? `<button type="button" class="danger-text calendar-block-delete" data-simple-action="delete-calendar-block">Удалить блок</button>` : ""}
+      <p class="calendar-block-hint">Блок сохраняется автоматически. Диапазон дат создаёт одинаковый интервал ${escapeHtml(calendarBlock.start)}–${escapeHtml(calendarBlock.end)} в каждом выбранном дне.</p>
+      <button type="button" class="danger-text calendar-block-delete" data-simple-action="delete-calendar-block">Удалить блок</button>
     </section>`;
   }
   const taskItem = module === "tasks"
@@ -3813,15 +3782,7 @@ document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
     return;
   }
   if (detailAction?.dataset.simpleAction === "close-calendar-detail") {
-    cancelCalendarDraft();
-    return;
-  }
-  if (detailAction?.dataset.simpleAction === "cancel-calendar-block") {
-    cancelCalendarDraft();
-    return;
-  }
-  if (detailAction?.dataset.simpleAction === "save-calendar-block") {
-    saveCalendarDraft();
+    closeCalendarBlock();
     return;
   }
   if (detailAction?.dataset.simpleAction === "delete-calendar-block") {
@@ -3832,7 +3793,6 @@ document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
       state.assistantActions.unshift(action("Блок удалён из календаря", `${block.title}, ${block.start}–${block.end}.`, "confirmed"));
     }
     state.ui.selectedCalendarBlockId = null;
-    calendarPendingEdit = null;
     saveState();
     return;
   }
@@ -4174,11 +4134,7 @@ document.querySelector("#simpleApp")?.addEventListener("change", (event) => {
   if (calendarBlockField) {
     const blockRoot = calendarBlockField.closest("[data-calendar-block-id]");
     const blockId = blockRoot?.dataset.calendarBlockId;
-    if (!calendarPendingEdit || calendarPendingEdit.draft.id !== blockId) {
-      const sourceBlock = state.dailyPlan.timeBlocks.find((item) => item.id === blockId);
-      if (sourceBlock) calendarPendingEdit = { mode: "update", blockId, linkedTaskId: "", actionTitle: "Блок календаря изменён", draft: structuredClone(sourceBlock) };
-    }
-    const block = calendarPendingEdit?.draft;
+    const block = state.dailyPlan.timeBlocks.find((item) => item.id === blockId);
     if (!block) return;
     const field = calendarBlockField.dataset.calendarBlockField;
     const value = calendarBlockField.value;
@@ -4196,6 +4152,7 @@ document.querySelector("#simpleApp")?.addEventListener("change", (event) => {
       block.end = calendarTimeValue(new Date(new Date(`${block.date || todayIso}T${block.start}:00`).getTime() + 30 * 60 * 1000));
     }
     block.updatedAt = new Date().toISOString();
+    saveState();
     return;
   }
   const taskField = event.target.closest("[data-task-field]");
