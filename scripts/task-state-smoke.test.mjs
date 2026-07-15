@@ -10,9 +10,12 @@ import {
   createTaskRecord,
   parseStateSnapshot,
   parseBackupPayload,
+  normalizeTaskRecord,
   resolveInboxRecord,
   restoreTaskRecord,
   scheduleTaskRecord,
+  setTaskPlanBucket,
+  setTaskWorkflowStatus,
   serializeStateSnapshot,
   updateTaskRecord
 } from "../public/task-state.js";
@@ -78,7 +81,34 @@ test("completion restores the previous status", () => {
 
   assert.equal(task.status, "this_week");
   assert.equal(task.previousStatus, "this_week");
+  assert.equal(task.planBucket, "this_week");
+  assert.equal(task.workflowStatus, "todo");
   assert.equal(task.updatedAt, "2026-07-14T09:05:00.000Z");
+});
+
+test("planning horizon and workflow stage change independently", () => {
+  const task = createTaskRecord({ id: "task-two-axis", title: "Проверить две оси", status: "backlog", now: "2026-07-15T08:00:00.000Z" });
+
+  setTaskWorkflowStatus(task, "in_progress", { now: "2026-07-15T08:05:00.000Z" });
+  assert.equal(task.planBucket, "backlog");
+  assert.equal(task.workflowStatus, "in_progress");
+
+  setTaskPlanBucket(task, "today", { now: "2026-07-15T08:10:00.000Z" });
+  assert.equal(task.planBucket, "today");
+  assert.equal(task.workflowStatus, "in_progress");
+  assert.equal(task.status, "today");
+});
+
+test("legacy completed task migrates without losing its planning bucket", () => {
+  const legacy = { id: "legacy-done", title: "Старая задача", status: "done", previousStatus: "this_week" };
+  normalizeTaskRecord(legacy);
+
+  assert.equal(legacy.planBucket, "this_week");
+  assert.equal(legacy.workflowStatus, "done");
+  restoreTaskRecord(legacy, { now: "2026-07-15T09:00:00.000Z" });
+  assert.equal(legacy.planBucket, "this_week");
+  assert.equal(legacy.workflowStatus, "todo");
+  assert.equal(legacy.status, "this_week");
 });
 
 test("duplicate is independent and is not pinned automatically", () => {
@@ -150,6 +180,8 @@ test("core daily workflow survives serialization and reload", () => {
   assert.equal(restored.inboxItems[0].parsed.linkedId, "task-1");
   assert.equal(restored.tasks[0].status, "done");
   assert.equal(restored.tasks[0].previousStatus, "today");
+  assert.equal(restored.tasks[0].planBucket, "today");
+  assert.equal(restored.tasks[0].workflowStatus, "done");
   assert.equal(restored.calendarEvents[0].taskId, "task-1");
   assert.equal(restored.focusSessions[0].durationMinutes, 25);
   assert.equal(restored.assistantActions[0].sourceId, "task-1");

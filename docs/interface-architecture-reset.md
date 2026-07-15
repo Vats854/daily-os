@@ -88,14 +88,14 @@ Hero Journey belongs here first.
 
 Primary object: task.
 
-Purpose: move tasks through status.
+Purpose: move the same tasks through workflow without changing their planning horizon.
 
 Columns:
-- Inbox;
-- Backlog;
-- This week;
-- Today;
+- Not started;
+- In progress;
 - Done.
+
+Inbox, Backlog, This week, and Today are planning views/metadata, not Kanban columns.
 
 Keep this plain and dense.
 

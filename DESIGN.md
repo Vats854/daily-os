@@ -60,9 +60,11 @@ Job: manage long-running projects and Hero Journey stages.
 
 ### Board
 
-Job: task pipeline by status.
+Job: execution progress independently from planning horizon.
 
-- Inbox → Backlog → This week → Today → Done.
+- Not started → In progress → Done.
+- Inbox, Backlog, This week, and Today remain planning metadata shown on cards.
+- Moving a card never changes when the task is planned.
 - Plain and dense.
 - Not a duplicate Today/Week planner.
 - No inspector unless a task is selected.

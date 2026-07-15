@@ -13,12 +13,15 @@ import {
   createBackupPayload,
   createTaskRecord,
   duplicateTaskRecord,
+  normalizeTaskRecord,
   parseBackupPayload,
   parseStateSnapshot,
   restoreTaskRecord,
+  setTaskPlanBucket,
+  setTaskWorkflowStatus,
   serializeStateSnapshot,
   updateTaskRecord
-} from "./task-state.js?v=132";
+} from "./task-state.js?v=144";
 
 const STORAGE_KEY = "second-brain-command-center:v1";
 const CONFLICT_BACKUP_KEY = "second-brain-command-center:conflict-backup";
@@ -42,11 +45,15 @@ const cloudSync = {
   legacyMode: false,
   hydratedUserId: ""
 };
-const boardColumns = [
+const planBuckets = [
   ["inbox", "Inbox"],
   ["backlog", "Backlog"],
   ["this_week", "Неделя"],
-  ["today", "Сегодня"],
+  ["today", "Сегодня"]
+];
+const workflowColumns = [
+  ["todo", "Не начато"],
+  ["in_progress", "В работе"],
   ["done", "Готово"]
 ];
 
@@ -121,7 +128,7 @@ const soundCategories = {
   rain: "Дождь",
   brown_noise: "Коричневый шум"
 };
-const simpleTaskViews = new Set(["today", "week", "board", "done"]);
+const simpleTaskViews = new Set(["today", "week", "all", "board", "done"]);
 
 const focusRuntime = {
   timerId: null,
@@ -476,7 +483,7 @@ function normalizeState(nextState) {
   if (!["sage", "sky", "clay"].includes(nextState.settings.appearanceTheme)) nextState.settings.appearanceTheme = "sage";
   if (!["clean", "soft", "editorial"].includes(nextState.settings.appearanceFont)) nextState.settings.appearanceFont = "clean";
   if (nextState.settings.activeView === "overview") nextState.settings.activeView = "projects";
-  if (!["inbox", "today", "week", "projects", "board", "focus", "habits", "notes", "log", "done"].includes(nextState.settings.activeView)) {
+  if (!["inbox", "today", "week", "all", "projects", "board", "focus", "habits", "notes", "log", "done"].includes(nextState.settings.activeView)) {
     nextState.settings.activeView = "today";
   }
   nextState.ui = nextState.ui || {};
@@ -544,9 +551,8 @@ function normalizeState(nextState) {
   nextState.projectObstacles = Array.isArray(nextState.projectObstacles) ? nextState.projectObstacles : structuredClone(seedState.projectObstacles);
   nextState.tasks = Array.isArray(nextState.tasks) ? nextState.tasks : [];
   nextState.tasks.forEach((item) => {
-    if (!taskStatuses.includes(item.status)) item.status = "inbox";
+    normalizeTaskRecord(item);
     if (!priorities.includes(item.priority)) item.priority = "medium";
-    item.previousStatus = taskStatuses.includes(item.previousStatus) && item.previousStatus !== "done" ? item.previousStatus : (item.status === "done" ? "today" : item.status);
     item.estimate = Number.isFinite(Number(item.estimate)) ? Number(item.estimate) : 30;
     item.dueDate = item.dueDate || "";
     item.tags = Array.isArray(item.tags) ? item.tags : [];
@@ -1060,7 +1066,7 @@ function dailyAiContext() {
     activeView: state.settings.activeView,
     dayFocus: state.dailyPlan.focus,
     dayStatus: state.dailyPlan.status,
-    todayTaskCount: state.tasks.filter((item) => item.status === "today").length,
+    todayTaskCount: state.tasks.filter((item) => item.planBucket === "today" && item.workflowStatus !== "done").length,
     projects: state.projects
       .filter((item) => item.status !== "archived")
       .slice(0, 8)
@@ -1163,8 +1169,8 @@ async function processInbox(text) {
 
 function processEveningReview(text) {
   const lower = text.toLowerCase();
-  const openToday = state.tasks.filter((item) => item.status === "today");
-  const completedCountBefore = state.tasks.filter((item) => item.status === "done").length;
+  const openToday = state.tasks.filter((item) => item.planBucket === "today" && item.workflowStatus !== "done");
+  const completedCountBefore = state.tasks.filter((item) => item.workflowStatus === "done").length;
   let completedByReview = 0;
   let movedByReview = 0;
 
@@ -1173,7 +1179,7 @@ function processEveningReview(text) {
       .filter((item) => item.priority === "high")
       .slice(0, 2)
       .forEach((item) => {
-        item.status = "done";
+        setTaskWorkflowStatus(item, "done");
         item.updatedAt = new Date().toISOString();
         completedByReview += 1;
       });
@@ -1181,9 +1187,9 @@ function processEveningReview(text) {
 
   if (/(не успел|не успела|перенести|перенеси|завтра|хвост|осталось)/i.test(lower)) {
     state.tasks
-      .filter((item) => item.status === "today")
+      .filter((item) => item.planBucket === "today" && item.workflowStatus !== "done")
       .forEach((item) => {
-        item.status = "this_week";
+        setTaskPlanBucket(item, "this_week");
         item.updatedAt = new Date().toISOString();
         movedByReview += 1;
       });
@@ -1193,7 +1199,7 @@ function processEveningReview(text) {
   state.dailyPlan.energy = energy;
 
   const tomorrowInherits = state.tasks
-    .filter((item) => item.status === "this_week" && item.priority !== "low")
+    .filter((item) => item.planBucket === "this_week" && item.workflowStatus !== "done" && item.priority !== "low")
     .slice(0, 3)
     .map((item) => item.title);
 
@@ -1244,7 +1250,7 @@ function processEveningReview(text) {
     )
   );
 
-  if (completedCountBefore !== state.tasks.filter((item) => item.status === "done").length) {
+  if (completedCountBefore !== state.tasks.filter((item) => item.workflowStatus === "done").length) {
     state.assistantActions.unshift(action("День обновлён", "Review изменил статусы задач и пересчитал прогресс.", "confirmed"));
   }
 
@@ -1286,8 +1292,8 @@ function nextTransitionFor(stage) {
 
 function reviewProjectJourney(projectItem) {
   const projectTasks = state.tasks.filter((item) => item.projectId === projectItem.id);
-  const openTasks = projectTasks.filter((item) => item.status !== "done");
-  const doneTasks = projectTasks.filter((item) => item.status === "done");
+  const openTasks = projectTasks.filter((item) => item.workflowStatus !== "done");
+  const doneTasks = projectTasks.filter((item) => item.workflowStatus === "done");
   const blockers = state.projectObstacles.filter((item) => item.projectId === projectItem.id && item.status === "open");
   const lowEnergy = projectItem.area === "health" && (state.dailyPlan.energy === "low" || state.dailyPlan.status === "low_energy");
   const stale = openTasks.length > 2 && doneTasks.length === 0;
@@ -1379,13 +1385,13 @@ function labelForKind(kind) {
 }
 
 function rebalanceToday() {
-  const todayTasks = state.tasks.filter((item) => item.status === "today" && item.status !== "done");
-  const important = state.tasks.filter((item) => item.priority === "high" && item.status !== "done");
+  const todayTasks = state.tasks.filter((item) => item.planBucket === "today" && item.workflowStatus !== "done");
+  const important = state.tasks.filter((item) => item.priority === "high" && item.workflowStatus !== "done");
 
   if (todayTasks.length < 3) {
-    const candidate = important.find((item) => item.status === "this_week" || item.status === "backlog");
+    const candidate = important.find((item) => item.planBucket === "this_week" || item.planBucket === "backlog");
     if (candidate) {
-      candidate.status = "today";
+      setTaskPlanBucket(candidate, "today");
       candidate.updatedAt = new Date().toISOString();
       state.assistantActions.unshift(
         action("Задача поднята в день", `"${candidate.title}" попала в Сегодня как высокий приоритет.`, "confirmed")
@@ -1393,11 +1399,11 @@ function rebalanceToday() {
     }
   }
 
-  const overload = state.tasks.filter((item) => item.status === "today" && item.status !== "done").length > 5;
+  const overload = state.tasks.filter((item) => item.planBucket === "today" && item.workflowStatus !== "done").length > 5;
   if (overload) {
-    const low = state.tasks.find((item) => item.status === "today" && item.priority === "low");
+    const low = state.tasks.find((item) => item.planBucket === "today" && item.workflowStatus !== "done" && item.priority === "low");
     if (low) {
-      low.status = "this_week";
+      setTaskPlanBucket(low, "this_week");
       low.updatedAt = new Date().toISOString();
       state.assistantActions.unshift(
         action("Снят перегруз дня", `"${low.title}" перенесена на неделю.`, "confirmed")
@@ -1641,7 +1647,8 @@ function createProjectFromInbox(item) {
     item.linkedId = sourceProject.id;
     return sourceProject;
   }
-  const overload = state.tasks.filter((candidate) => candidate.status === "today").length > 4 || state.dailyPlan.status === "overloaded";
+  const overload = state.tasks.filter((candidate) => candidate.planBucket === "today" && candidate.workflowStatus !== "done").length > 4
+    || state.dailyPlan.status === "overloaded";
   const newProject = {
     ...project({
       title: item.parsed?.title || item.text,
@@ -1684,11 +1691,7 @@ function createTaskFromInbox(item, status = "backlog") {
   if (!item) return null;
   const existing = item.linkedType === "task" ? getInboxLinkedObject(item) : null;
   if (existing) {
-    if (taskStatuses.includes(status)) {
-      existing.previousStatus = existing.status === "done" ? status : existing.status;
-      existing.status = status;
-      existing.updatedAt = new Date().toISOString();
-    }
+    if (planBuckets.some(([id]) => id === status)) setTaskPlanBucket(existing, status);
     item.status = "processed";
     state.assistantActions.unshift(action("Связанная задача обновлена", `${existing.title} → ${statusLabel(status)}`, "confirmed"));
     selectTask(existing.id);
@@ -1704,9 +1707,7 @@ function createTaskFromInbox(item, status = "backlog") {
       state.notes = state.notes.filter((candidate) => candidate.id !== item.linkedId);
     }
     recovered.sourceInboxId = item.id;
-    recovered.previousStatus = recovered.status === "done" ? status : recovered.status;
-    recovered.status = status;
-    recovered.updatedAt = new Date().toISOString();
+    if (planBuckets.some(([id]) => id === status)) setTaskPlanBucket(recovered, status);
     item.status = "processed";
     item.linkedType = "task";
     item.linkedId = recovered.id;
@@ -1783,7 +1784,7 @@ function openInboxLinkedObject(item) {
   state.ui.selectedTaskId = null;
   if (item.linkedType === "task") {
     state.ui.simpleModule = "tasks";
-    selectTask(linked.id, linked.status === "today" ? "today" : "board");
+    selectTask(linked.id, linked.planBucket === "today" ? "today" : "all");
   }
   if (item.linkedType === "project") {
     state.selectedProjectId = linked.id;
@@ -1866,17 +1867,18 @@ function simpleViewMeta() {
   return {
     today: { title: "Сегодня", subtitle: "Задачи, которые реально в работе сегодня.", kind: "tasks", status: "today" },
     week: { title: "Следующие 7 дней", subtitle: "Пул недели без календарного шума.", kind: "tasks", status: "this_week" },
-    board: { title: "Все задачи", subtitle: "Обычный список всех активных задач.", kind: "all_tasks" },
+    all: { title: "Все задачи", subtitle: "Единый список задач независимо от горизонта планирования.", kind: "all_tasks" },
+    board: { title: "Канбан", subtitle: "Рабочий этап задач: не начато, в работе или готово.", kind: "kanban" },
     done: { title: "Выполненные", subtitle: "Закрытые задачи, которые можно вернуть в работу.", kind: "done_tasks" }
   }[view] || { title: "Сегодня", subtitle: "Чистый список задач.", kind: "tasks", status: "today" };
 }
 
 function simpleCounts() {
   return {
-    today: state.tasks.filter((item) => item.status === "today").length,
-    week: state.tasks.filter((item) => item.status === "this_week").length,
-    inbox: state.tasks.filter((item) => item.status === "inbox").length,
-    done: state.tasks.filter((item) => item.status === "done").length,
+    today: state.tasks.filter((item) => item.planBucket === "today" && item.workflowStatus !== "done").length,
+    week: state.tasks.filter((item) => item.planBucket === "this_week" && item.workflowStatus !== "done").length,
+    inbox: state.tasks.filter((item) => item.planBucket === "inbox" && item.workflowStatus !== "done").length,
+    done: state.tasks.filter((item) => item.workflowStatus === "done").length,
     notes: state.notes.length,
     habits: state.habits.length,
     projects: state.projects.length,
@@ -1959,7 +1961,7 @@ function setSimpleModule(module) {
 }
 
 function renderSimpleTaskListRow(item) {
-  const count = state.tasks.filter((taskItem) => taskItem.area === item.id && taskItem.status !== "done").length;
+  const count = state.tasks.filter((taskItem) => taskItem.area === item.id && taskItem.workflowStatus !== "done").length;
   if (state.ui?.renamingListId === item.id) {
     return `<form class="simple-list-form" data-list-id="${escapeHtml(item.id)}" data-list-form="rename"><input name="title" type="text" value="${escapeHtml(item.title)}" autofocus /><button type="submit">OK</button><button type="button" data-simple-list-action="cancel-rename">×</button></form>`;
   }
@@ -1981,7 +1983,8 @@ function renderSimpleNav(module, counts) {
     const navItems = [
       ["today", "Сегодня", counts.today, "list-todo"],
       ["week", "Следующие 7 дней", counts.week, "calendar-days"],
-      ["board", "Все задачи", state.tasks.filter((item) => item.status !== "done").length, "list-todo"],
+      ["all", "Все задачи", state.tasks.filter((item) => item.workflowStatus !== "done").length, "list-todo"],
+      ["board", "Канбан", state.tasks.filter((item) => item.workflowStatus === "in_progress").length, "diamond"],
       ["done", "Выполненные", counts.done, "circle-check-big"]
     ];
     const groupLabels = { work: "Работа", personal: "Личное", health: "Здоровье" };
@@ -2056,6 +2059,7 @@ function renderSimpleApp() {
   if (!root) return;
   const module = currentSimpleModule();
   root.dataset.module = module;
+  root.dataset.view = state.settings.activeView || "today";
   root.dataset.theme = state.settings.appearanceTheme;
   root.dataset.font = state.settings.appearanceFont;
   if (module !== "tasks") state.ui.simpleArea = "";
@@ -2316,7 +2320,7 @@ function renderCalendarWorkspace() {
   const weekEnd = dates[6];
   const monthFormatter = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long" });
   const dayFormatter = new Intl.DateTimeFormat("ru-RU", { weekday: "short" });
-  const unscheduled = state.tasks.filter((item) => item.status !== "done" && !item.dueDate && ["today", "this_week"].includes(item.status));
+  const unscheduled = state.tasks.filter((item) => item.workflowStatus !== "done" && !item.dueDate && ["today", "this_week"].includes(item.planBucket));
   const now = new Date();
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
   const showNow = dates.some((date) => localDateIso(date) === todayIso) && nowMinutes >= calendarStartHour * 60 && nowMinutes <= calendarEndHour * 60;
@@ -2458,7 +2462,7 @@ function saveCalendarDraft() {
   if (pending.linkedTaskId) {
     const taskItem = state.tasks.find((item) => item.id === pending.linkedTaskId);
     if (taskItem) {
-      taskItem.status = "today";
+      setTaskPlanBucket(taskItem, "today");
       taskItem.updatedAt = new Date().toISOString();
     }
   }
@@ -2667,14 +2671,14 @@ function renderSimpleProjectsWorkspace() {
   if (!selected) return `<div class="simple-empty">Проектов пока нет. Создай первый проект сверху.</div>`;
   const stagePosition = stageIndex(selected.journeyStage);
   const relatedTasks = state.tasks.filter((item) => item.projectId === selected.id);
-  const openTasks = relatedTasks.filter((item) => item.status !== "done");
+  const openTasks = relatedTasks.filter((item) => item.workflowStatus !== "done");
   const obstacles = state.projectObstacles.filter((item) => item.projectId === selected.id && item.status === "open");
   const recentEvents = state.projectStageEvents.filter((item) => item.projectId === selected.id).slice(0, 4);
-  const availableTasks = state.tasks.filter((item) => !item.projectId && item.status !== "done").slice(0, 30);
+  const availableTasks = state.tasks.filter((item) => !item.projectId && item.workflowStatus !== "done").slice(0, 30);
   return `<section class="simple-project-workspace" data-project-id="${escapeHtml(selected.id)}">
     <nav class="simple-project-index" aria-label="Активные проекты">
       ${projects.map((item) => {
-        const taskCount = state.tasks.filter((taskItem) => taskItem.projectId === item.id && taskItem.status !== "done").length;
+        const taskCount = state.tasks.filter((taskItem) => taskItem.projectId === item.id && taskItem.workflowStatus !== "done").length;
         return `<button type="button" class="${item.id === selected.id ? "active" : ""}" data-simple-project-id="${escapeHtml(item.id)}"><span class="simple-project-dot ${escapeHtml(calendarTone(item.area))}"></span><span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(stageLabel(item.journeyStage))} · ${taskCount} задач</small></span></button>`;
       }).join("")}
     </nav>
@@ -2696,7 +2700,7 @@ function renderSimpleProjectsWorkspace() {
           <form data-simple-project-form="create-task"><input name="title" placeholder="+ Новая задача проекта" required /><button type="submit">Добавить</button></form>
           ${availableTasks.length ? `<form data-simple-project-form="link-task"><select name="taskId" aria-label="Выбрать существующую задачу"><option value="">Привязать существующую...</option>${availableTasks.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title)}</option>`).join("")}</select><button type="submit">Привязать</button></form>` : ""}
         </div>
-        ${relatedTasks.length ? relatedTasks.map((item) => `<article data-simple-project-task-id="${escapeHtml(item.id)}"><button type="button" class="task-toggle ${item.status === "done" ? "done" : ""}" data-simple-project-task-action="toggle" aria-label="${item.status === "done" ? "Вернуть задачу" : "Завершить задачу"}"></button><button type="button" class="simple-project-task-title" data-simple-project-task-action="select"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(statusLabel(item.status))} · ${escapeHtml(priorityLabel(item.priority))} · ${item.estimate} мин</small></button><button type="button" class="simple-project-task-unlink" data-simple-project-task-action="unlink" aria-label="Отвязать задачу">×</button></article>`).join("") : `<p class="simple-project-muted">Связанных задач пока нет. Создай новую или привяжи существующую.</p>`}
+        ${relatedTasks.length ? relatedTasks.map((item) => `<article data-simple-project-task-id="${escapeHtml(item.id)}"><button type="button" class="task-toggle ${item.workflowStatus === "done" ? "done" : ""}" data-simple-project-task-action="toggle" aria-label="${item.workflowStatus === "done" ? "Вернуть задачу" : "Завершить задачу"}"></button><button type="button" class="simple-project-task-title" data-simple-project-task-action="select"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(statusLabel(item.planBucket))} · ${escapeHtml(workflowLabel(item.workflowStatus))} · ${escapeHtml(priorityLabel(item.priority))} · ${item.estimate} мин</small></button><button type="button" class="simple-project-task-unlink" data-simple-project-task-action="unlink" aria-label="Отвязать задачу">×</button></article>`).join("") : `<p class="simple-project-muted">Связанных задач пока нет. Создай новую или привяжи существующую.</p>`}
       </section>
       ${recentEvents.length ? `<section class="simple-project-history"><span class="label">История переходов</span>${recentEvents.map((item) => `<p><time>${escapeHtml(new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short" }).format(new Date(item.createdAt)))}</time><span>${escapeHtml(stageLabel(item.fromStage))} → ${escapeHtml(stageLabel(item.toStage))}</span><em>${escapeHtml(item.status)}</em></p>`).join("")}</section>` : ""}
     </article>
@@ -2710,6 +2714,31 @@ function renderSimpleLogWorkspace() {
   return `<section class="simple-log-table" aria-label="Журнал изменений">
     <header><span>Время</span><span>Действие и причина</span><span>Статус</span></header>
     ${items.map((item) => `<article><time>${escapeHtml(new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(item.createdAt)))}</time><div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.reason || item.detail || "Причина не указана")}</p></div><span class="simple-log-status ${escapeHtml(item.status || "confirmed")}">${escapeHtml(statusLabels[item.status] || item.status || "применено")}</span></article>`).join("")}
+  </section>`;
+}
+
+function renderTaskKanban() {
+  return `<section class="task-kanban" aria-label="Канбан задач">
+    ${workflowColumns.map(([workflowStatus, title], columnIndex) => {
+      const tasks = state.tasks
+        .filter((item) => item.workflowStatus === workflowStatus)
+        .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+      return `<section class="task-kanban-column" data-workflow-dropzone="${workflowStatus}">
+        <header><span>${escapeHtml(title)}</span><strong>${tasks.length}</strong></header>
+        <div class="task-kanban-stack">
+          ${tasks.length ? tasks.map((item) => `<article class="task-kanban-card ${state.ui?.selectedTaskId === item.id ? "active" : ""}" draggable="true" data-task-id="${escapeHtml(item.id)}" data-kanban-card="true">
+            <button type="button" class="task-kanban-open" data-action="select-task" data-task-id="${escapeHtml(item.id)}">
+              <strong>${escapeHtml(item.title)}</strong>
+              <span>${escapeHtml(statusLabel(item.planBucket))} · ${escapeHtml(listLabel(item.area))}${item.dueDate ? ` · ${escapeHtml(formatShortDate(item.dueDate))}` : ""}</span>
+            </button>
+            <div class="task-kanban-moves" aria-label="Переместить задачу">
+              ${columnIndex > 0 ? `<button type="button" data-board-action="move" data-workflow-status="${workflowColumns[columnIndex - 1][0]}" aria-label="Переместить в ${escapeHtml(workflowColumns[columnIndex - 1][1])}">←</button>` : ""}
+              ${columnIndex < workflowColumns.length - 1 ? `<button type="button" data-board-action="move" data-workflow-status="${workflowColumns[columnIndex + 1][0]}" aria-label="Переместить в ${escapeHtml(workflowColumns[columnIndex + 1][1])}">→</button>` : ""}
+            </div>
+          </article>`).join("") : `<div class="task-kanban-empty">Перетащи задачу сюда</div>`}
+        </div>
+      </section>`;
+    }).join("")}
   </section>`;
 }
 
@@ -2744,11 +2773,12 @@ function renderSimpleMainList(meta) {
   if (meta.kind === "log") {
     return renderSimpleLogWorkspace();
   }
+  if (meta.kind === "kanban") return renderTaskKanban();
 
-  let tasks = state.tasks.filter((item) => item.status !== "done");
-  if (meta.kind === "tasks") tasks = state.tasks.filter((item) => item.status === meta.status);
-  if (meta.kind === "done_tasks") tasks = state.tasks.filter((item) => item.status === "done");
-  if (meta.kind === "area") tasks = state.tasks.filter((item) => item.area === meta.area && item.status !== "done");
+  let tasks = state.tasks.filter((item) => item.workflowStatus !== "done");
+  if (meta.kind === "tasks") tasks = state.tasks.filter((item) => item.planBucket === meta.status && item.workflowStatus !== "done");
+  if (meta.kind === "done_tasks") tasks = state.tasks.filter((item) => item.workflowStatus === "done");
+  if (meta.kind === "area") tasks = state.tasks.filter((item) => item.area === meta.area && item.workflowStatus !== "done");
   tasks = [...tasks].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
   return tasks.length
     ? tasks.map(renderSimpleTaskRow).join("")
@@ -2757,10 +2787,10 @@ function renderSimpleMainList(meta) {
 
 function renderSimpleTaskRow(item) {
   return `<article class="simple-row ${state.ui?.selectedTaskId === item.id ? "active" : ""}" data-task-id="${escapeHtml(item.id)}" data-simple-object="task">
-    <button type="button" class="task-toggle ${item.status === "done" ? "done" : ""}" data-action="toggle" title="Готово"></button>
+    <button type="button" class="task-toggle ${item.workflowStatus === "done" ? "done" : ""}" data-action="toggle" title="Готово"></button>
     <div>
       <span>${item.pinned ? `<span class="simple-pin-mark" title="Закреплено">●</span>` : ""}${escapeHtml(item.title)}</span>
-      <small><span class="simple-priority-flag ${escapeHtml(item.priority)}" aria-hidden="true">⚑</span>${escapeHtml(statusLabel(item.status))} · ${escapeHtml(listLabel(item.area))}${(item.tags || []).length ? ` · ${(item.tags || []).slice(0, 2).map((tag) => `#${escapeHtml(tag)}`).join(" ")}` : ""}</small>
+      <small><span class="simple-priority-flag ${escapeHtml(item.priority)}" aria-hidden="true">⚑</span>${escapeHtml(statusLabel(item.planBucket))} · ${escapeHtml(workflowLabel(item.workflowStatus))} · ${escapeHtml(listLabel(item.area))}${(item.tags || []).length ? ` · ${(item.tags || []).slice(0, 2).map((tag) => `#${escapeHtml(tag)}`).join(" ")}` : ""}</small>
     </div>
     <button type="button" class="simple-more" data-simple-action="select-task-menu" aria-label="Параметры задачи"><img src="/icons/ellipsis.svg" alt="" /></button>
   </article>`;
@@ -2933,7 +2963,7 @@ function renderSimpleDetail(meta) {
     const focusActive = state.focus?.selectedTaskId === taskItem.id && state.focus?.running;
     return `<section class="simple-detail-card" data-task-id="${escapeHtml(taskItem.id)}">
       <div class="simple-detail-head">
-        <button type="button" class="task-toggle ${taskItem.status === "done" ? "done" : ""}" data-simple-action="toggle-selected" aria-label="${taskItem.status === "done" ? "Вернуть задачу" : "Завершить задачу"}"></button>
+        <button type="button" class="task-toggle ${taskItem.workflowStatus === "done" ? "done" : ""}" data-simple-action="toggle-selected" aria-label="${taskItem.workflowStatus === "done" ? "Вернуть задачу" : "Завершить задачу"}"></button>
         <span class="label">Задача</span>
         <div class="simple-detail-head-actions">
           <button type="button" class="simple-detail-menu-button ${state.ui.taskMenuOpen ? "active" : ""}" data-simple-action="task-menu" aria-label="Параметры задачи" aria-expanded="${state.ui.taskMenuOpen ? "true" : "false"}"><img src="/icons/ellipsis.svg" alt="" /></button>
@@ -2969,7 +2999,8 @@ function renderSimpleDetail(meta) {
           <div class="simple-priority-options"><span>Приоритет</span>${renderOptionChips("priority", priorities, taskItem.priority, { low: "⚑", medium: "⚑", high: "⚑" })}</div>
         </div>
         <label class="simple-task-menu-row"><span>Список</span><select data-task-field="area">${taskLists().map(({ id, title }) => `<option value="${escapeHtml(id)}" ${taskItem.area === id ? "selected" : ""}>${escapeHtml(title)}</option>`).join("")}</select></label>
-        <label class="simple-task-menu-row"><span>Статус</span><select data-task-field="status">${boardColumns.map(([id, title]) => `<option value="${id}" ${taskItem.status === id ? "selected" : ""}>${escapeHtml(title)}</option>`).join("")}</select></label>
+        <label class="simple-task-menu-row"><span>План</span><select data-task-field="planBucket">${planBuckets.map(([id, title]) => `<option value="${id}" ${taskItem.planBucket === id ? "selected" : ""}>${escapeHtml(title)}</option>`).join("")}</select></label>
+        <label class="simple-task-menu-row"><span>Этап</span><select data-task-field="workflowStatus">${workflowColumns.map(([id, title]) => `<option value="${id}" ${taskItem.workflowStatus === id ? "selected" : ""}>${escapeHtml(title)}</option>`).join("")}</select></label>
         <label class="simple-task-menu-row"><span>Длительность</span><select data-task-field="estimate">${[15, 25, 45, 60].map((value) => `<option value="${value}" ${Number(taskItem.estimate) === value ? "selected" : ""}>${value} мин</option>`).join("")}</select></label>
         <label class="simple-task-menu-row"><span>Теги</span><input data-task-field="tags" value="${escapeHtml((taskItem.tags || []).join(", "))}" placeholder="Добавить теги" /></label>
         <div class="simple-task-command-list">
@@ -2977,7 +3008,7 @@ function renderSimpleDetail(meta) {
           <button type="button" data-simple-action="start-focus"><span>Начать фокус</span><small>${taskItem.estimate || 25} мин</small></button>
           <button type="button" data-simple-action="duplicate-task"><span>Дублировать</span><small>Создать копию</small></button>
         </div>
-        <div class="simple-task-menu-actions"><button type="button" data-simple-action="toggle-selected">${taskItem.status === "done" ? "Вернуть в работу" : "Завершить"}</button><button class="danger-text" type="button" data-simple-action="delete-task">Удалить</button></div>
+        <div class="simple-task-menu-actions"><button type="button" data-simple-action="toggle-selected">${taskItem.workflowStatus === "done" ? "Вернуть в работу" : "Завершить"}</button><button class="danger-text" type="button" data-simple-action="delete-task">Удалить</button></div>
       </div>` : ""}
     </section>`;
   }
@@ -3024,7 +3055,7 @@ function addSimpleComposerItem(text, meta) {
     state.assistantActions.unshift(action("Проект создан", text, "confirmed"));
     return;
   }
-  const status = meta.kind === "tasks" && meta.status !== "done" ? meta.status : "inbox";
+  const status = meta.kind === "tasks" ? meta.status : "inbox";
   const area = meta.area || state.ui?.simpleArea || suggestedTaskArea(text);
   const item = task(text, status || "inbox", area, "medium", 25, null);
   state.tasks.unshift(item);
@@ -3053,8 +3084,8 @@ function lastSevenDates() {
 function getFocusTask() {
   return state.tasks.find((item) => item.id === state.focus?.selectedTaskId)
     || state.tasks.find((item) => item.id === state.ui?.selectedTaskId)
-    || state.tasks.find((item) => item.status === "today" && item.status !== "done")
-    || state.tasks.find((item) => item.status !== "done")
+    || state.tasks.find((item) => item.planBucket === "today" && item.workflowStatus !== "done")
+    || state.tasks.find((item) => item.workflowStatus !== "done")
     || state.tasks[0]
     || null;
 }
@@ -3064,9 +3095,12 @@ function statusLabel(status) {
     inbox: "Inbox",
     backlog: "Backlog",
     this_week: "Неделя",
-    today: "Сегодня",
-    done: "Готово"
+    today: "Сегодня"
   }[status] || status;
+}
+
+function workflowLabel(status) {
+  return { todo: "Не начато", in_progress: "В работе", done: "Готово" }[status] || status;
 }
 
 function priorityLabel(priority) {
@@ -3272,7 +3306,7 @@ function searchDailyOs(query) {
   const results = [];
   state.tasks.forEach((item) => {
     if (`${item.title} ${(item.tags || []).join(" ")}`.toLowerCase().includes(needle)) {
-      results.push({ type: "task", id: item.id, title: item.title, detail: `${statusLabel(item.status)} · ${listLabel(item.area)}` });
+      results.push({ type: "task", id: item.id, title: item.title, detail: `${statusLabel(item.planBucket)} · ${workflowLabel(item.workflowStatus)} · ${listLabel(item.area)}` });
     }
   });
   state.projects.forEach((item) => {
@@ -3499,13 +3533,9 @@ document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
     if (!item) return;
     const command = projectTaskAction.dataset.simpleProjectTaskAction;
     if (command === "toggle") {
-      if (item.status === "done") item.status = item.previousStatus || "this_week";
-      else {
-        item.previousStatus = item.status;
-        item.status = "done";
-      }
-      item.updatedAt = new Date().toISOString();
-      state.assistantActions.unshift(action(item.status === "done" ? "Задача проекта завершена" : "Задача проекта возвращена", item.title, "confirmed"));
+      if (item.workflowStatus === "done") restoreTaskRecord(item);
+      else completeTaskRecord(item);
+      state.assistantActions.unshift(action(item.workflowStatus === "done" ? "Задача проекта завершена" : "Задача проекта возвращена", item.title, "confirmed"));
       saveState();
       return;
     }
@@ -3519,7 +3549,7 @@ document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
     }
     if (command === "select") {
       state.ui.simpleModule = "tasks";
-      state.settings.activeView = item.status === "done" ? "done" : item.status;
+      state.settings.activeView = item.workflowStatus === "done" ? "done" : (item.planBucket === "today" ? "today" : item.planBucket === "this_week" ? "week" : "all");
       state.ui.lastTaskView = state.settings.activeView;
       state.ui.simpleArea = "";
       state.ui.selectedTaskId = item.id;
@@ -3809,13 +3839,9 @@ document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
   if (detailAction?.dataset.simpleAction === "toggle-selected") {
     const item = getSelectedTask();
     if (!item) return;
-    stageUndo(item.status === "done" ? "Задача возвращена" : "Задача завершена");
-    if (item.status === "done") restoreTaskRecord(item);
-    else {
-      item.previousStatus = item.status;
-      item.status = "done";
-      item.updatedAt = new Date().toISOString();
-    }
+    stageUndo(item.workflowStatus === "done" ? "Задача возвращена" : "Задача завершена");
+    if (item.workflowStatus === "done") restoreTaskRecord(item);
+    else completeTaskRecord(item);
     saveState();
     return;
   }
@@ -4447,14 +4473,11 @@ document.body.addEventListener("click", (event) => {
     const taskRoot = boardAction.closest("[data-task-id]");
     const item = state.tasks.find((candidate) => candidate.id === taskRoot?.dataset.taskId);
     if (!item) return;
-    if (boardAction.dataset.boardAction === "move" && taskStatuses.includes(boardAction.dataset.status)) {
-      const nextStatus = boardAction.dataset.status;
-      if (nextStatus === "done") item.previousStatus = item.status;
-      if (item.status === "done" && nextStatus !== "done") item.previousStatus = nextStatus;
-      item.status = nextStatus;
-      item.updatedAt = new Date().toISOString();
+    if (boardAction.dataset.boardAction === "move" && workflowColumns.some(([id]) => id === boardAction.dataset.workflowStatus)) {
+      const nextStatus = boardAction.dataset.workflowStatus;
+      setTaskWorkflowStatus(item, nextStatus);
       selectTask(item.id, "board");
-      state.assistantActions.unshift(action("Задача перемещена", `${item.title} → ${statusLabel(item.status)}`, "confirmed"));
+      state.assistantActions.unshift(action("Этап задачи изменён", `${item.title} → ${workflowLabel(item.workflowStatus)}`, "confirmed"));
       saveState();
     }
     return;
@@ -4491,16 +4514,14 @@ document.body.addEventListener("click", (event) => {
     const taskItem = toggle.closest("[data-task-id]");
     const item = state.tasks.find((candidate) => candidate.id === taskItem.dataset.taskId);
     if (!item) return;
-    stageUndo(item.status === "done" ? "Задача возвращена" : "Задача завершена");
-    if (item.status === "done") {
-      item.status = item.previousStatus || "today";
+    stageUndo(item.workflowStatus === "done" ? "Задача возвращена" : "Задача завершена");
+    if (item.workflowStatus === "done") {
+      restoreTaskRecord(item);
       state.assistantActions.unshift(action("Задача возвращена", item.title, "confirmed"));
     } else {
-      item.previousStatus = item.status;
-      item.status = "done";
+      completeTaskRecord(item);
       state.assistantActions.unshift(action("Задача закрыта", item.title, "confirmed"));
     }
-    item.updatedAt = new Date().toISOString();
     selectTask(item.id);
     saveState();
     return;
@@ -4564,11 +4585,10 @@ document.querySelector("#addWeeklyFocus")?.addEventListener("click", () => {
 
 function sweepBacklogToWeek() {
   state.tasks
-    .filter((item) => item.status === "backlog" && item.priority !== "low")
+    .filter((item) => item.planBucket === "backlog" && item.workflowStatus !== "done" && item.priority !== "low")
     .slice(0, 3)
     .forEach((item) => {
-      item.status = "this_week";
-      item.updatedAt = new Date().toISOString();
+      setTaskPlanBucket(item, "this_week");
     });
   state.assistantActions.unshift(action("Бэклог разложен", "До трёх важных задач подняты в неделю.", "confirmed"));
 }
@@ -4742,6 +4762,40 @@ document.querySelector("#searchResults")?.addEventListener("click", (event) => {
   }
   document.querySelector("#globalSearch").value = "";
   renderSearchResults("");
+  saveState();
+});
+
+document.addEventListener("dragstart", (event) => {
+  const card = event.target.closest("[data-kanban-card][data-task-id]");
+  if (!card || currentSimpleModule() !== "tasks" || state.settings.activeView !== "board") return;
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", card.dataset.taskId);
+  card.classList.add("dragging");
+});
+
+document.addEventListener("dragend", (event) => {
+  event.target.closest("[data-kanban-card]")?.classList.remove("dragging");
+  document.querySelectorAll("[data-workflow-dropzone].drag-over").forEach((column) => column.classList.remove("drag-over"));
+});
+
+document.addEventListener("dragover", (event) => {
+  const column = event.target.closest("[data-workflow-dropzone]");
+  if (!column) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  document.querySelectorAll("[data-workflow-dropzone].drag-over").forEach((item) => item.classList.toggle("drag-over", item === column));
+});
+
+document.addEventListener("drop", (event) => {
+  const column = event.target.closest("[data-workflow-dropzone]");
+  if (!column) return;
+  event.preventDefault();
+  const item = state.tasks.find((candidate) => candidate.id === event.dataTransfer.getData("text/plain"));
+  const nextWorkflowStatus = column.dataset.workflowDropzone;
+  if (!item || !workflowColumns.some(([id]) => id === nextWorkflowStatus) || item.workflowStatus === nextWorkflowStatus) return;
+  setTaskWorkflowStatus(item, nextWorkflowStatus);
+  state.ui.selectedTaskId = item.id;
+  state.assistantActions.unshift(action("Этап задачи изменён", `${item.title} → ${workflowLabel(nextWorkflowStatus)}`, "confirmed"));
   saveState();
 });
 

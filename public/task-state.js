@@ -1,6 +1,8 @@
 export function createTaskRecord({
   title,
   status = "inbox",
+  planBucket = "",
+  workflowStatus = "",
   area = "work",
   priority = "medium",
   estimate = 30,
@@ -8,15 +10,24 @@ export function createTaskRecord({
   id = crypto.randomUUID(),
   now = new Date().toISOString()
 }) {
+  const normalizedPlanBucket = ["inbox", "backlog", "this_week", "today"].includes(planBucket)
+    ? planBucket
+    : (["inbox", "backlog", "this_week", "today"].includes(status) ? status : "today");
+  const normalizedWorkflowStatus = ["todo", "in_progress", "done"].includes(workflowStatus)
+    ? workflowStatus
+    : (status === "done" ? "done" : "todo");
   return {
     id,
     projectId,
     title,
-    status,
+    planBucket: normalizedPlanBucket,
+    workflowStatus: normalizedWorkflowStatus,
+    status: normalizedWorkflowStatus === "done" ? "done" : normalizedPlanBucket,
     area,
     priority,
     estimate,
-    previousStatus: status === "done" ? "today" : status,
+    previousStatus: normalizedPlanBucket,
+    previousWorkflowStatus: normalizedWorkflowStatus === "done" ? "todo" : normalizedWorkflowStatus,
     dueDate: "",
     tags: [],
     pinned: false,
@@ -42,10 +53,11 @@ export function updateTaskRecord(item, field, value, options = {}) {
   if (field === "title") item.title = String(value || "").trim() || item.title;
   if (field === "description") item.description = String(value || "");
   if (field === "status" && statuses.includes(value)) {
-    if (value !== "done") item.previousStatus = value;
-    if (item.status !== "done" && value === "done") item.previousStatus = item.status;
-    item.status = value;
+    if (value === "done") setTaskWorkflowStatus(item, "done", { now });
+    else setTaskPlanBucket(item, value, { now });
   }
+  if (field === "planBucket") setTaskPlanBucket(item, value, { now });
+  if (field === "workflowStatus") setTaskWorkflowStatus(item, value, { now });
   if (field === "area" && areas.includes(value)) item.area = value;
   if (field === "priority" && priorities.includes(value)) item.priority = value;
   if (field === "estimate") item.estimate = Math.max(5, Math.min(480, Number(value) || 30));
@@ -66,6 +78,49 @@ export function updateTaskRecord(item, field, value, options = {}) {
   }
   item.updatedAt = now;
   return item;
+}
+
+export function normalizeTaskRecord(item) {
+  if (!item) return null;
+  const planBuckets = ["inbox", "backlog", "this_week", "today"];
+  const workflowStatuses = ["todo", "in_progress", "done"];
+  const legacyPlanBucket = planBuckets.includes(item.previousStatus) ? item.previousStatus : "today";
+  item.planBucket = planBuckets.includes(item.planBucket)
+    ? item.planBucket
+    : (planBuckets.includes(item.status) ? item.status : legacyPlanBucket);
+  item.workflowStatus = workflowStatuses.includes(item.workflowStatus)
+    ? item.workflowStatus
+    : (item.status === "done" ? "done" : "todo");
+  item.previousWorkflowStatus = workflowStatuses.includes(item.previousWorkflowStatus) && item.previousWorkflowStatus !== "done"
+    ? item.previousWorkflowStatus
+    : "todo";
+  syncLegacyTaskStatus(item);
+  return item;
+}
+
+export function setTaskPlanBucket(item, planBucket, { now = new Date().toISOString() } = {}) {
+  if (!item || !["inbox", "backlog", "this_week", "today"].includes(planBucket)) return null;
+  item.planBucket = planBucket;
+  item.previousStatus = planBucket;
+  syncLegacyTaskStatus(item);
+  item.updatedAt = now;
+  return item;
+}
+
+export function setTaskWorkflowStatus(item, workflowStatus, { now = new Date().toISOString() } = {}) {
+  if (!item || !["todo", "in_progress", "done"].includes(workflowStatus)) return null;
+  if (item.workflowStatus !== "done" && workflowStatus === "done") {
+    item.previousWorkflowStatus = item.workflowStatus || "todo";
+  }
+  item.workflowStatus = workflowStatus;
+  syncLegacyTaskStatus(item);
+  item.updatedAt = now;
+  return item;
+}
+
+function syncLegacyTaskStatus(item) {
+  item.previousStatus = item.planBucket || "today";
+  item.status = item.workflowStatus === "done" ? "done" : item.previousStatus;
 }
 
 export function serializeStateSnapshot(value) {
@@ -134,8 +189,7 @@ export function scheduleTaskRecord(item, {
   now = new Date().toISOString()
 }) {
   if (!item || !date || !start || !end || start >= end) return null;
-  item.status = "today";
-  item.updatedAt = now;
+  setTaskPlanBucket(item, "today", { now });
   return {
     id: blockId,
     taskId: item.id,
@@ -152,17 +206,14 @@ export function scheduleTaskRecord(item, {
 
 export function completeTaskRecord(item, { now = new Date().toISOString() } = {}) {
   if (!item) return null;
-  if (item.status !== "done") item.previousStatus = item.status;
-  item.status = "done";
-  item.updatedAt = now;
-  return item;
+  normalizeTaskRecord(item);
+  return setTaskWorkflowStatus(item, "done", { now });
 }
 
 export function restoreTaskRecord(item, { now = new Date().toISOString() } = {}) {
   if (!item) return null;
-  item.status = item.previousStatus || "today";
-  item.updatedAt = now;
-  return item;
+  normalizeTaskRecord(item);
+  return setTaskWorkflowStatus(item, item.previousWorkflowStatus || "todo", { now });
 }
 
 export function duplicateTaskRecord(item, {
@@ -172,10 +223,12 @@ export function duplicateTaskRecord(item, {
 } = {}) {
   if (!item) return null;
   const duplicate = structuredClone(item);
+  normalizeTaskRecord(duplicate);
   duplicate.id = id;
   duplicate.title = `Копия — ${item.title}`;
-  duplicate.status = item.status === "done" ? (item.previousStatus || "today") : item.status;
-  duplicate.previousStatus = duplicate.status;
+  duplicate.workflowStatus = duplicate.workflowStatus === "done" ? "todo" : duplicate.workflowStatus;
+  duplicate.previousWorkflowStatus = "todo";
+  syncLegacyTaskStatus(duplicate);
   duplicate.pinned = false;
   duplicate.createdAt = now;
   duplicate.updatedAt = now;

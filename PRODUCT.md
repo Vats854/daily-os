@@ -21,7 +21,7 @@ Single expert user building a personal Life OS around work search, projects, tra
 ## Primary objects
 
 - Inbox item: raw thought or incoming input that needs interpretation.
-- Task: executable action with status `inbox`, `backlog`, `this_week`, `today`, or `done`.
+- Task: executable action with independent planning horizon (`inbox`, `backlog`, `this_week`, `today`) and workflow stage (`todo`, `in_progress`, `done`).
 - Daily plan: accepted blocks of the day and linked tasks.
 - Weekly focus: strategic stake for the week, not a checkbox task.
 - Project: long-running life/work focus with stage, quest, blockers, and transition criteria.
@@ -33,7 +33,7 @@ Single expert user building a personal Life OS around work search, projects, tra
 - Today: accepted day plan and current/next action.
 - Week: weekly stakes, executable tasks, backlog candidates.
 - Projects: long-running projects and Hero Journey stages.
-- Board: task pipeline by status, not a day/week duplicate.
+- Board: workflow pipeline over the same tasks, not a day/week duplicate or a second task store.
 - Log: audit trail of AI actions.
 
 ## AI operator role
