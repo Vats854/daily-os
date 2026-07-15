@@ -8,11 +8,16 @@ const [html, app, styles, worker, supabaseClient] = await Promise.all([
   readFile(new URL("../public/supabase-client.js", import.meta.url), "utf8")
 ]);
 
+const unreferencedTopLevelFunctions = [...app.matchAll(/^function\s+([A-Za-z_$][\w$]*)\s*\(/gm)]
+  .map((match) => match[1])
+  .filter((name) => (app.match(new RegExp(`\\b${name}\\b`, "g")) || []).length === 1);
+
 const contracts = [
   ["all primary modules exist", ["capture", "tasks", "calendar", "habits", "focus", "notes", "projects", "log"].every((module) => html.includes(`data-simple-module="${module}"`))],
   ["production shell is the only shell", html.includes('id="simpleApp"') && !html.includes('legacyDashboardArchive') && !html.includes('class="app-shell')],
   ["legacy dashboard markup is absent", !["todayView", "weekView", "projectsView", "boardView", "appInspectorContent"].some((id) => html.includes(`id="${id}"`))],
   ["render has one production path", /function render\(\) \{\s*renderSimpleApp\(\);\s*\}/m.test(app)],
+  ["no unreferenced top-level functions remain", unreferencedTopLevelFunctions.length === 0],
   ["task view memory is normalized", app.includes("nextState.ui.lastTaskView") && app.includes("state.ui.lastTaskView = state.settings.activeView")],
   ["focus controls are wired to the active shell", app.includes('document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>') && app.includes('event.target.closest("[data-sound-action]")')],
   ["live focus volume is wired", app.includes('event.target.closest(\'[data-focus-field="volume"]\')') && app.includes("focusRuntime.gain.gain.value")],
@@ -24,7 +29,7 @@ const contracts = [
   ["unsafe legacy upsert is disabled", supabaseClient.includes("SYNC_UPGRADE_REQUIRED") && !supabaseClient.includes('.from("daily_os_states").upsert')],
   ["sync diagnostics are accessible", html.includes('id="simpleSyncToggle"') && html.includes('id="simpleSyncPanel"') && app.includes("renderSimpleSyncPanel")],
   ["sync retry uses the safe queue", app.includes('data-simple-sync-action="retry"') && app.includes("queueCloudSave({ immediate: true })")],
-  ["asset versions match", html.includes("styles.css?v=138") && html.includes("task-core.css?v=138") && html.includes("app.js?v=138") && worker.includes("v138")],
+  ["asset versions match", html.includes("styles.css?v=139") && html.includes("task-core.css?v=139") && html.includes("app.js?v=139") && worker.includes("v139")],
   ["open detail grid overrides authenticated shell", styles.includes('body[data-auth] .simple-app.detail-open')],
   ["notes grid overrides authenticated shell", styles.includes('body[data-auth] .simple-app[data-module="notes"]')],
   ["Inbox composer does not default to the first custom list", !app.includes('meta.area || state.ui?.simpleArea || taskLists()[0]?.id')],
