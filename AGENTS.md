@@ -34,17 +34,22 @@ the repository skill at `.agents/skills/run-daily-os-stage/SKILL.md` before codi
 - Recommend a new Codex task only when the stage is independently reviewable; do not
   create a user-owned task without an explicit user request.
 
-## Large-stage workflow
+## Prompt discipline
 
-For a substantial feature, cross-module change, architecture refactor, or redesign, use
-the repository skill at `.agents/skills/run-daily-os-stage/SKILL.md` before coding.
+For stage briefs, implementation prompts, and handoffs, follow the current OpenAI
+GPT-5.6 prompting guidance:
+`https://developers.openai.com/api/docs/guides/prompt-guidance-gpt-5p6`.
 
-- Write a compact stage brief under `docs/stages/`.
-- Reference source-of-truth files instead of copying conversation history.
-- State scope, non-goals, acceptance criteria, risks, and verification.
-- Keep small follow-up fixes in the current task.
-- Recommend a new Codex task only when the stage is independently reviewable; do not
-  create a user-owned task without an explicit user request.
+- Lead with the user-visible outcome, then constraints, available evidence, acceptance
+  criteria, and a clear stopping condition.
+- State the current work layer: research, design, implementation, verification, or
+  external coordination.
+- Preserve explicit user decisions; use decision rules for judgment calls instead of
+  inventing broad defaults.
+- Keep autonomy boundaries in one place: safe in-scope local changes and validation may
+  proceed; destructive, external, costly, or materially expanded work requires approval.
+- Remove repeated rules, inert examples, and unrelated tool instructions. Prefer the
+  smallest prompt that still preserves correctness, evidence, and validation.
 
 ## User expectations
 
