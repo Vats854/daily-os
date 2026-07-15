@@ -324,6 +324,7 @@ state.ui.pendingDeleteTaskId = state.ui.pendingDeleteTaskId || "";
 state.ui.pendingDeleteNoteId = state.ui.pendingDeleteNoteId || "";
 state.ui.taskMenuOpen = false;
 state.ui.taskMenuPosition = null;
+state.ui.noteMenuOpen = false;
 state.ui.quickTagsOpen = false;
 state.ui.appearanceOpen = false;
 state.ui.calendarWeekOffset = Number.isInteger(state.ui.calendarWeekOffset) ? state.ui.calendarWeekOffset : 0;
@@ -2953,18 +2954,19 @@ function renderSimpleDetail(meta) {
         <button type="button" data-simple-action="${focusActive ? "pause-focus" : "start-focus"}">${focusActive ? "Пауза" : "Старт"}</button>
         <button type="button" data-simple-action="reset-focus">Сбросить</button>
       </div>` : ""}
-      ${state.ui.taskMenuOpen ? `<div class="simple-task-menu ${state.ui.taskMenuPosition ? "is-contextual" : ""}" ${state.ui.taskMenuPosition ? `style="left:${state.ui.taskMenuPosition.x}px;top:${state.ui.taskMenuPosition.y}px"` : ""} role="dialog" aria-label="Параметры задачи">
-        <div class="simple-task-menu-section"><span>Дата</span><div class="simple-option-row">${renderOptionChips("dueDate", ["", todayIso, addDaysIso(1), addDaysIso(7)], taskDuePresetValue(taskItem), dueLabels)}<input class="simple-date-input" type="date" data-task-field="dueDate" value="${escapeHtml(taskItem.dueDate || "")}" aria-label="Точная дата" /></div></div>
-        <div class="simple-task-menu-section simple-priority-options"><span>Приоритет</span><div>${renderOptionChips("priority", priorities, taskItem.priority, { low: "⚑ Низкий", medium: "⚑ Средний", high: "⚑ Высокий" })}</div></div>
-        <label class="simple-task-menu-field"><span>Список</span><select data-task-field="area">${taskLists().map(({ id, title }) => `<option value="${escapeHtml(id)}" ${taskItem.area === id ? "selected" : ""}>${escapeHtml(title)}</option>`).join("")}</select></label>
-        <div class="simple-task-menu-section"><span>Статус</span><div>${renderOptionChips("status", taskStatuses, taskItem.status, Object.fromEntries(boardColumns))}</div></div>
-        <div class="simple-task-menu-section"><span>Длительность</span><div>${renderOptionChips("estimate", [15, 25, 45, 60], taskItem.estimate, { 15: "15 мин", 25: "25 мин", 45: "45 мин", 60: "60 мин" })}</div></div>
-        <div class="simple-task-menu-section"><span>Теги</span><div class="simple-tag-options">${knownTags.map((tag) => `<button type="button" class="option-chip ${(taskItem.tags || []).includes(tag) ? "active" : ""}" data-task-tag="${escapeHtml(tag)}">#${escapeHtml(tag)}</button>`).join("") || `<small>Создай первый тег ниже</small>`}</div></div>
-        <label class="simple-task-menu-field"><span>Добавить теги через запятую</span><input data-task-field="tags" value="${escapeHtml((taskItem.tags || []).join(", "))}" placeholder="например: звонок, дом" /></label>
-        <div class="simple-task-menu-commands">
-          <button type="button" data-simple-action="toggle-pin">${taskItem.pinned ? "Открепить" : "Закрепить"}</button>
-          <button type="button" data-simple-action="start-focus">Начать фокус</button>
-          <button type="button" data-simple-action="duplicate-task">Дублировать</button>
+      ${state.ui.taskMenuOpen ? `<div class="simple-task-menu ${state.ui.taskMenuPosition ? "is-contextual" : ""}" ${state.ui.taskMenuPosition ? `style="left:${state.ui.taskMenuPosition.x}px;top:${state.ui.taskMenuPosition.y}px"` : ""} role="menu" aria-label="Действия с задачей">
+        <div class="simple-task-menu-presets">
+          <div><span>Дата</span>${renderOptionChips("dueDate", [todayIso, addDaysIso(1), addDaysIso(7), ""], taskDuePresetValue(taskItem), { [todayIso]: "Сегодня", [addDaysIso(1)]: "Завтра", [addDaysIso(7)]: "+7", "": "Без даты" })}</div>
+          <div class="simple-priority-options"><span>Приоритет</span>${renderOptionChips("priority", priorities, taskItem.priority, { low: "⚑", medium: "⚑", high: "⚑" })}</div>
+        </div>
+        <label class="simple-task-menu-row"><span>Список</span><select data-task-field="area">${taskLists().map(({ id, title }) => `<option value="${escapeHtml(id)}" ${taskItem.area === id ? "selected" : ""}>${escapeHtml(title)}</option>`).join("")}</select></label>
+        <label class="simple-task-menu-row"><span>Статус</span><select data-task-field="status">${boardColumns.map(([id, title]) => `<option value="${id}" ${taskItem.status === id ? "selected" : ""}>${escapeHtml(title)}</option>`).join("")}</select></label>
+        <label class="simple-task-menu-row"><span>Длительность</span><select data-task-field="estimate">${[15, 25, 45, 60].map((value) => `<option value="${value}" ${Number(taskItem.estimate) === value ? "selected" : ""}>${value} мин</option>`).join("")}</select></label>
+        <label class="simple-task-menu-row"><span>Теги</span><input data-task-field="tags" value="${escapeHtml((taskItem.tags || []).join(", "))}" placeholder="Добавить теги" /></label>
+        <div class="simple-task-command-list">
+          <button type="button" data-simple-action="toggle-pin"><span>${taskItem.pinned ? "Открепить" : "Закрепить"}</span><small>${taskItem.pinned ? "Убрать из важных" : "Показывать выше"}</small></button>
+          <button type="button" data-simple-action="start-focus"><span>Начать фокус</span><small>${taskItem.estimate || 25} мин</small></button>
+          <button type="button" data-simple-action="duplicate-task"><span>Дублировать</span><small>Создать копию</small></button>
         </div>
         <div class="simple-task-menu-actions"><button type="button" data-simple-action="toggle-selected">${taskItem.status === "done" ? "Вернуть в работу" : "Завершить"}</button><button class="danger-text" type="button" data-simple-action="delete-task">Удалить</button></div>
       </div>` : ""}
@@ -2977,7 +2979,7 @@ function renderSimpleDetail(meta) {
       <div class="simple-note-editor-bar">
         <div class="simple-note-path"><span>Заметки</span><b>/</b><select data-note-field="folderId" aria-label="Список заметки" title="Переместить в список"><option value="">Без списка</option>${noteFolders().map(({ id, title }) => `<option value="${escapeHtml(id)}" ${noteItem.folderId === id ? "selected" : ""}>${escapeHtml(title)}</option>`).join("")}</select></div>
         <span class="simple-save-hint">Сохранено · ${wordCount} слов</span>
-        <button class="danger-link" type="button" data-simple-action="delete-note">Удалить</button>
+        <div class="simple-note-menu-wrap"><button type="button" class="simple-detail-menu-button ${state.ui.noteMenuOpen ? "active" : ""}" data-simple-action="note-menu" aria-label="Действия с заметкой"><img src="/icons/ellipsis.svg" alt="" /></button>${state.ui.noteMenuOpen ? `<div class="simple-note-menu" role="menu"><button class="danger-text" type="button" data-simple-action="delete-note">Удалить заметку</button></div>` : ""}</div>
         <button type="button" class="simple-detail-close" data-simple-action="close-detail" aria-label="Закрыть заметку"><img src="/icons/x.svg" alt="" /></button>
       </div>
       <textarea class="simple-note-title" data-note-field="title" rows="2" placeholder="Без названия">${escapeHtml(noteTitle(noteItem))}</textarea>
@@ -3740,15 +3742,24 @@ document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
     return;
   }
   if (detailAction?.dataset.simpleAction === "task-menu") {
+    state.ui.noteMenuOpen = false;
     state.ui.quickTagsOpen = false;
     state.ui.taskMenuOpen = !state.ui.taskMenuOpen;
     state.ui.taskMenuPosition = null;
     saveState();
     return;
   }
+  if (detailAction?.dataset.simpleAction === "note-menu") {
+    state.ui.taskMenuOpen = false;
+    state.ui.taskMenuPosition = null;
+    state.ui.noteMenuOpen = !state.ui.noteMenuOpen;
+    saveState();
+    return;
+  }
   if (detailAction?.dataset.simpleAction === "quick-tags") {
     state.ui.taskMenuOpen = false;
     state.ui.taskMenuPosition = null;
+    state.ui.noteMenuOpen = false;
     state.ui.quickTagsOpen = !state.ui.quickTagsOpen;
     saveState();
     return;
@@ -3869,6 +3880,7 @@ document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
   if (detailAction?.dataset.simpleAction === "delete-note") {
     const item = state.notes.find((candidate) => candidate.id === state.ui.selectedNoteId);
     if (item) state.ui.pendingDeleteNoteId = item.id;
+    state.ui.noteMenuOpen = false;
     saveState();
     return;
   }
@@ -3877,6 +3889,7 @@ document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
   if (taskRow && !event.target.closest('[data-action="toggle"]')) {
     selectTask(taskRow.dataset.taskId);
     state.ui.selectedNoteId = null;
+    state.ui.noteMenuOpen = false;
     state.ui.taskMenuOpen = false;
     state.ui.quickTagsOpen = false;
     saveState();
@@ -3911,7 +3924,7 @@ document.querySelector("#simpleApp")?.addEventListener("contextmenu", (event) =>
 
   if (!selectTask(taskRow.dataset.taskId)) return;
   const menuWidth = 330;
-  const menuHeight = 620;
+  const menuHeight = 520;
   state.ui.taskMenuOpen = true;
   state.ui.taskMenuPosition = {
     x: Math.max(12, Math.min(event.clientX, window.innerWidth - menuWidth - 12)),
@@ -3932,6 +3945,10 @@ document.addEventListener("click", (event) => {
   }
   if (state.ui?.quickTagsOpen && !event.target.closest(".simple-quick-tags, [data-simple-action='quick-tags']")) {
     state.ui.quickTagsOpen = false;
+    renderSimpleApp();
+  }
+  if (state.ui?.noteMenuOpen && !event.target.closest(".simple-note-menu, [data-simple-action='note-menu']")) {
+    state.ui.noteMenuOpen = false;
     renderSimpleApp();
   }
   if (!state.ui?.taskMenuOpen) return;
