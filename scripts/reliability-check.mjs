@@ -36,6 +36,7 @@ const contracts = [
   ["open detail grid overrides authenticated shell", styles.includes('body[data-auth] .simple-app.detail-open')],
   ["notes grid overrides authenticated shell", styles.includes('body[data-auth] .simple-app[data-module="notes"]')],
   ["Inbox composer does not default to the first custom list", !app.includes('meta.area || state.ui?.simpleArea || taskLists()[0]?.id')],
+  ["Inbox requires confirmation before object creation", app.includes('data-inbox-action="accept-suggestion"') && app.includes('status: parsed.needsReview ? "needs_review" : "open"') && app.includes('if (actionName === "accept-suggestion")')],
   ["task summary properties are independent controls", app.includes('data-simple-action="quick-tags"') && styles.includes(".simple-task-summary button:hover")],
   ["task duplication uses the tested state contract", app.includes("duplicateTaskRecord(item)") && app.includes("restoreTaskRecord(item)")],
   ["backup input exists", html.includes('id="simpleBackupInput"') && html.includes('accept="application/json,.json"')],

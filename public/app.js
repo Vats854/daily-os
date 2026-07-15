@@ -1124,7 +1124,7 @@ async function processInbox(text) {
     id: crypto.randomUUID(),
     text,
     parsed,
-    status: "open",
+    status: parsed.needsReview ? "needs_review" : "open",
     linkedType: "",
     linkedId: "",
     createdAt: new Date().toISOString()
@@ -1135,80 +1135,11 @@ async function processInbox(text) {
   state.ui.selectedInboxId = inboxItem.id;
   state.ui.lastCaptureId = inboxItem.id;
 
-  if (parsed.kind === "project" || /(проект|цель|запустить|начать|новый трек|новое направление)/i.test(text)) {
-    const overload = state.tasks.filter((item) => item.status === "today").length > 4 || state.dailyPlan.status === "overloaded";
-    const newProject = project({
-      title: parsed.title,
-      area: parsed.area,
-      progress: 0,
-      journeyStage: overload ? "call" : "commitment",
-      journeyStatus: overload ? "watch" : "active",
-      stageReason: overload
-        ? "Новый проект выглядит как идея, но текущая загрузка требует проверки перед принятием."
-        : "Проект можно принять в работу, если есть следующий конкретный шаг.",
-      nextTransition: overload
-        ? "Проверить ресурс и отложить или принять решение."
-        : "Собрать подготовку: ресурсы, сроки, ограничения."
-    });
-    state.projects.unshift(newProject);
-    state.selectedProjectId = newProject.id;
-    inboxItem.status = overload ? "needs_review" : "processed";
-    inboxItem.linkedType = "project";
-    inboxItem.linkedId = newProject.id;
-    state.projectStageEvents.unshift(stageEvent(newProject.id, null, newProject.journeyStage, newProject.stageReason, "assistant", "confirmed"));
-    state.assistantActions.unshift(action(
-      overload ? "Новый проект поставлен на проверку" : "Новый проект создан",
-      overload ? "Ассистент не принимает проект автоматически из-за текущей загрузки." : "Проект добавлен в путь целей.",
-      overload ? "needs_review" : "confirmed"
-    ));
-  } else if (parsed.kind === "task" || parsed.kind === "plan_change") {
-    const category = suggestCategoryForInbox(inboxItem);
-    const projectItem = category.kind === "project" ? findByTitle(state.projects, category.title) : null;
-    const routineItem = category.kind === "routine" ? findByTitle(state.routines, category.title) : null;
-    const newTask = {
-      ...task(parsed.title, parsed.status, category.area || parsed.area, parsed.priority, 30, projectItem?.id || null),
-      routineId: routineItem?.id || null,
-      needsReview: parsed.needsReview
-    };
-    state.tasks.unshift(newTask);
-    inboxItem.status = parsed.needsReview ? "needs_review" : "processed";
-    inboxItem.linkedType = "task";
-    inboxItem.linkedId = newTask.id;
-    selectTask(newTask.id);
-  } else {
-    const now = new Date().toISOString();
-    const newNote = {
-      id: crypto.randomUUID(),
-      type: parsed.kind,
-      area: parsed.area,
-      folderId: noteFolderForArea(parsed.area),
-      title: parsed.title || text.split("\n")[0].slice(0, 90) || "Без названия",
-      text,
-      tags: [],
-      createdAt: now,
-      updatedAt: now
-    };
-    state.notes.unshift(newNote);
-    inboxItem.status = parsed.needsReview ? "needs_review" : "processed";
-    inboxItem.linkedType = "note";
-    inboxItem.linkedId = newNote.id;
-  }
-
-  if (parsed.kind === "health_signal") {
-    state.memoryItems.unshift({
-      id: crypto.randomUUID(),
-      key: "energy_signal",
-      text,
-      confidence: parsed.needsReview ? "medium" : "high",
-      createdAt: new Date().toISOString()
-    });
-  }
-
   state.assistantActions.unshift(
     action(
-      labelForKind(parsed.kind),
-      parsed.reason || `Определено как ${labelForKind(parsed.kind).toLowerCase()}, область: ${areaLabels[parsed.area]}.`,
-      parsed.needsReview ? "needs_review" : "confirmed"
+      `Входящее классифицировано: ${inboxKindLabel(parsed.kind)}`,
+      parsed.reason || `Определено как ${inboxKindLabel(parsed.kind).toLowerCase()}, список: ${listLabel(parsed.area)}.`,
+      parsed.needsReview ? "needs_review" : "needs_confirmation"
     )
   );
 
@@ -1222,7 +1153,6 @@ async function processInbox(text) {
     );
   }
 
-  rebalanceToday();
   saveState();
   return inboxItem;
 }
@@ -1658,6 +1588,18 @@ function inboxLinkedTypeLabel(item) {
   }[item?.linkedType] || labelForKind(item?.parsed?.kind || "note");
 }
 
+function inboxKindLabel(kind) {
+  return {
+    task: "Задача",
+    note: "Заметка",
+    idea: "Идея",
+    plan_change: "Изменение плана",
+    health_signal: "Сигнал здоровья",
+    project: "Проект",
+    daily_context: "Контекст дня"
+  }[kind] || "Входящее";
+}
+
 function inboxDestinationLabel(item, linked = getInboxLinkedObject(item)) {
   if (!linked) return "Решение ещё не принято";
   if (item.linkedType === "task") return `${statusLabel(linked.status)} · ${listLabel(linked.area)}`;
@@ -1672,6 +1614,54 @@ function getInboxLinkedObject(item) {
   if (item.linkedType === "project") return state.projects.find((candidate) => candidate.id === item.linkedId) || null;
   if (item.linkedType === "note") return state.notes.find((candidate) => candidate.id === item.linkedId) || null;
   return null;
+}
+
+function inboxSuggestedKind(item) {
+  if (item?.parsed?.kind === "project" || /(проект|цель|запустить|начать|новый трек|новое направление)/i.test(item?.text || "")) return "project";
+  if (["task", "plan_change"].includes(item?.parsed?.kind)) return "task";
+  return "note";
+}
+
+function inboxSuggestedStatus(item) {
+  return taskStatuses.includes(item?.parsed?.status) ? item.parsed.status : "backlog";
+}
+
+function createProjectFromInbox(item) {
+  if (!item) return null;
+  const existing = item.linkedType === "project" ? getInboxLinkedObject(item) : null;
+  if (existing) return existing;
+  const sourceProject = state.projects.find((candidate) => candidate.sourceInboxId === item.id);
+  if (sourceProject) {
+    item.status = "processed";
+    item.linkedType = "project";
+    item.linkedId = sourceProject.id;
+    return sourceProject;
+  }
+  const overload = state.tasks.filter((candidate) => candidate.status === "today").length > 4 || state.dailyPlan.status === "overloaded";
+  const newProject = {
+    ...project({
+      title: item.parsed?.title || item.text,
+      area: item.parsed?.area || "personal",
+      progress: 0,
+      journeyStage: overload ? "call" : "commitment",
+      journeyStatus: overload ? "watch" : "active",
+      stageReason: overload
+        ? "Текущая загрузка требует отдельной проверки ресурса перед принятием проекта."
+        : "Проект подтверждён из Inbox; следующим шагом нужно определить подготовку.",
+      nextTransition: overload
+        ? "Проверить ресурс и принять или отложить проект."
+        : "Собрать ресурсы, сроки и ограничения."
+    }),
+    sourceInboxId: item.id
+  };
+  state.projects.unshift(newProject);
+  state.selectedProjectId = newProject.id;
+  item.status = "processed";
+  item.linkedType = "project";
+  item.linkedId = newProject.id;
+  state.projectStageEvents.unshift(stageEvent(newProject.id, null, newProject.journeyStage, newProject.stageReason, "user", "confirmed"));
+  state.assistantActions.unshift(action("Входящее подтверждено как проект", newProject.title, "confirmed"));
+  return newProject;
 }
 
 function inboxTaskCandidates(item, category = suggestCategoryForInbox(item)) {
@@ -1769,6 +1759,16 @@ function saveInboxAsNote(item) {
   item.linkedType = "note";
   item.linkedId = newNote.id;
   state.assistantActions.unshift(action("Входящее сохранено заметкой", item.parsed?.title || item.text, "confirmed"));
+  if (item.parsed?.kind === "health_signal" && !state.memoryItems.some((candidate) => candidate.sourceInboxId === item.id)) {
+    state.memoryItems.unshift({
+      id: crypto.randomUUID(),
+      sourceInboxId: item.id,
+      key: "energy_signal",
+      text: item.text,
+      confidence: item.parsed?.needsReview ? "medium" : "high",
+      createdAt: new Date().toISOString()
+    });
+  }
   return newNote;
 }
 
@@ -1809,6 +1809,13 @@ function handleInboxAction(actionName, item) {
   if (actionName === "task-today") createTaskFromInbox(item, "today");
   if (actionName === "convert-to-task") createTaskFromInbox(item, "today");
   if (actionName === "task-backlog") createTaskFromInbox(item, "backlog");
+  if (actionName === "project") createProjectFromInbox(item);
+  if (actionName === "accept-suggestion") {
+    const suggestedKind = inboxSuggestedKind(item);
+    if (suggestedKind === "task") createTaskFromInbox(item, inboxSuggestedStatus(item));
+    if (suggestedKind === "note") saveInboxAsNote(item);
+    if (suggestedKind === "project") createProjectFromInbox(item);
+  }
   if (actionName === "note") saveInboxAsNote(item);
   if (actionName === "open-linked") openInboxLinkedObject(item);
   if (actionName === "delete") deleteInboxItem(item);
@@ -2775,17 +2782,33 @@ function renderSimpleNoteRow(item) {
   </article>`;
 }
 
+function inboxProposal(item) {
+  const kind = inboxSuggestedKind(item);
+  const area = listLabel(item.parsed?.area || "personal");
+  if (kind === "task") {
+    const status = inboxSuggestedStatus(item);
+    return {
+      label: `Задача · ${statusLabel(status)} · ${area}`,
+      action: status === "today" ? "Добавить на сегодня" : status === "this_week" ? "Добавить на неделю" : "Добавить в бэклог"
+    };
+  }
+  if (kind === "project") return { label: `Проект · ${area}`, action: "Создать проект" };
+  return { label: `Заметка · ${area}`, action: "Сохранить заметкой" };
+}
+
 function renderSimpleInboxRow(item) {
   const linked = getInboxLinkedObject(item);
-  const kindLabel = labelForKind(item.parsed?.kind || "note");
+  const kindLabel = inboxKindLabel(item.parsed?.kind || "note");
   const openLabel = item.linkedType === "task" ? "Открыть задачу" : item.linkedType === "note" ? "Открыть заметку" : "Открыть";
+  const proposal = inboxProposal(item);
+  const reason = item.parsed?.reason || `Ассистент определил тип «${kindLabel.toLowerCase()}» по формулировке и контексту.`;
   return `<article class="simple-inbox-row ${item.status === "needs_review" ? "needs-review" : ""}" data-inbox-id="${escapeHtml(item.id)}">
     <div class="simple-inbox-state"><span>${escapeHtml(inboxStatusLabel(item.status))}</span><small>${escapeHtml(kindLabel)}</small></div>
-    <div class="simple-inbox-copy"><strong>${escapeHtml(item.parsed?.title || item.text)}</strong><p>${escapeHtml(item.text)}</p><small>${linked ? `${escapeHtml(inboxLinkedTypeLabel(item))} · ${escapeHtml(inboxDestinationLabel(item, linked))}` : escapeHtml(item.parsed?.reason || "Ожидает решения")}</small></div>
+    <div class="simple-inbox-copy"><strong>${escapeHtml(item.parsed?.title || item.text)}</strong><p>${escapeHtml(item.text)}</p>${linked ? `<small>${escapeHtml(inboxLinkedTypeLabel(item))} · ${escapeHtml(inboxDestinationLabel(item, linked))}</small>` : `<div class="simple-inbox-proposal"><span>Предложение ассистента</span><strong>${escapeHtml(proposal.label)}</strong><p>${escapeHtml(reason)}</p></div>`}</div>
     <div class="simple-inbox-actions">
       ${linked ? `<button type="button" class="primary" data-inbox-action="open-linked">${openLabel}</button>` : ""}
       ${linked && item.linkedType === "note" ? `<button type="button" data-inbox-action="convert-to-task">Сделать задачей</button>` : ""}
-      ${!linked ? `<button type="button" data-inbox-action="task-today">Задача на сегодня</button><button type="button" data-inbox-action="note">Сохранить заметкой</button>` : ""}
+      ${!linked ? `<button type="button" class="primary" data-inbox-action="accept-suggestion">${escapeHtml(proposal.action)}</button><details class="simple-inbox-alternatives"><summary>Другой вариант</summary><div><button type="button" data-inbox-action="task-today">Задача на сегодня</button><button type="button" data-inbox-action="task-backlog">Задача в бэклог</button><button type="button" data-inbox-action="note">Заметка</button><button type="button" data-inbox-action="project">Проект</button></div></details>` : ""}
       <button type="button" class="danger-text" data-inbox-action="delete">Удалить</button>
     </div>
   </article>`;

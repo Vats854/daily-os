@@ -564,8 +564,18 @@ body[data-auth] .simple-app[data-module="calendar"].detail-open {
 .simple-inbox-state span { display: inline-block; padding: 4px 6px; border-radius: 5px; background: #edf2ef; color: #52625a; font-size: 9px; font-weight: 800; text-transform: uppercase; }.simple-inbox-state small { display: block; margin-top: 7px; color: var(--core-muted); font-size: 10px; }
 .simple-inbox-row.needs-review .simple-inbox-state span { background: #fff2dd; color: #8a5c17; }
 .simple-inbox-copy { min-width: 0; }.simple-inbox-copy strong { display: block; font-size: 14px; }.simple-inbox-copy p { margin: 5px 0; color: var(--core-text); font-size: 12px; line-height: 1.45; }.simple-inbox-copy small { color: var(--core-muted); font-size: 11px; line-height: 1.4; }
+.simple-inbox-proposal { margin-top: 10px; padding: 10px 12px; border-left: 2px solid var(--core-blue); background: color-mix(in srgb, var(--core-blue-soft) 68%, transparent); }
+.simple-inbox-proposal span { display: block; margin-bottom: 3px; color: var(--core-blue); font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.simple-inbox-proposal strong { font-size: 12px; }
+.simple-inbox-proposal p { margin: 4px 0 0; color: var(--core-muted); font-size: 11px; }
 .simple-inbox-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; max-width: 250px; }.simple-inbox-actions button { min-height: 30px; padding: 0 8px; border: 1px solid var(--core-line); border-radius: 6px; background: var(--core-surface); color: var(--core-text); font-size: 10px; font-weight: 720; }.simple-inbox-actions button:hover { background: var(--core-blue-soft); }.simple-inbox-actions .danger-text { color: var(--core-danger); }
 .simple-inbox-actions button.primary { border-color: var(--core-ink); background: var(--core-ink); color: #fff; }
+.simple-inbox-alternatives { position: relative; }
+.simple-inbox-alternatives summary { display: grid; min-height: 30px; padding: 0 8px; place-items: center; border: 1px solid var(--core-line); border-radius: 6px; background: var(--core-surface); color: var(--core-muted); cursor: pointer; font-size: 10px; font-weight: 720; list-style: none; }
+.simple-inbox-alternatives summary::-webkit-details-marker { display: none; }
+.simple-inbox-alternatives[open] summary { border-color: var(--core-blue); color: var(--core-blue); }
+.simple-inbox-alternatives > div { position: absolute; z-index: 20; top: calc(100% + 5px); right: 0; display: grid; width: 170px; padding: 5px; border: 1px solid var(--core-line); border-radius: 7px; background: var(--core-surface); box-shadow: 0 12px 32px rgba(20, 26, 38, 0.12); }
+.simple-inbox-alternatives > div button { width: 100%; border: 0; text-align: left; }
 
 .simple-row .simple-pin-mark,
 .simple-row .simple-priority-flag {
@@ -1805,6 +1815,7 @@ body[data-auth] .simple-app[data-module="notes"].detail-open {
   .simple-inbox-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .simple-inbox-state { display: flex; align-items: center; gap: 8px; }.simple-inbox-state small { margin: 0; }
   .simple-inbox-actions { justify-content: flex-start; max-width: none; }
+  .simple-inbox-alternatives > div { right: auto; left: 0; }
 
   .simple-row .simple-more,
   .simple-list-action {
