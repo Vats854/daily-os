@@ -12,6 +12,9 @@ const unreferencedTopLevelFunctions = [...app.matchAll(/^function\s+([A-Za-z_$][
   .map((match) => match[1])
   .filter((name) => (app.match(new RegExp(`\\b${name}\\b`, "g")) || []).length === 1);
 
+const assetVersions = [...html.matchAll(/(?:styles\.css|task-core\.css|app\.js)\?v=(\d+)/g)].map((match) => match[1]);
+const workerVersion = worker.match(/CACHE_NAME\s*=\s*"[^"]+-v(\d+)"/)?.[1];
+
 const contracts = [
   ["all primary modules exist", ["capture", "tasks", "calendar", "habits", "focus", "notes", "projects", "log"].every((module) => html.includes(`data-simple-module="${module}"`))],
   ["production shell is the only shell", html.includes('id="simpleApp"') && !html.includes('legacyDashboardArchive') && !html.includes('class="app-shell')],
@@ -29,7 +32,7 @@ const contracts = [
   ["unsafe legacy upsert is disabled", supabaseClient.includes("SYNC_UPGRADE_REQUIRED") && !supabaseClient.includes('.from("daily_os_states").upsert')],
   ["sync diagnostics are accessible", html.includes('id="simpleSyncToggle"') && html.includes('id="simpleSyncPanel"') && app.includes("renderSimpleSyncPanel")],
   ["sync retry uses the safe queue", app.includes('data-simple-sync-action="retry"') && app.includes("queueCloudSave({ immediate: true })")],
-  ["asset versions match", html.includes("styles.css?v=139") && html.includes("task-core.css?v=139") && html.includes("app.js?v=139") && worker.includes("v139")],
+  ["asset versions match", assetVersions.length === 3 && assetVersions.every((version) => version === workerVersion)],
   ["open detail grid overrides authenticated shell", styles.includes('body[data-auth] .simple-app.detail-open')],
   ["notes grid overrides authenticated shell", styles.includes('body[data-auth] .simple-app[data-module="notes"]')],
   ["Inbox composer does not default to the first custom list", !app.includes('meta.area || state.ui?.simpleArea || taskLists()[0]?.id')],

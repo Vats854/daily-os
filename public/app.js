@@ -1674,6 +1674,18 @@ function getInboxLinkedObject(item) {
   return null;
 }
 
+function inboxTaskCandidates(item, category = suggestCategoryForInbox(item)) {
+  const title = String(item?.parsed?.title || item?.text || "").trim().toLowerCase();
+  if (!title) return [];
+  return state.tasks.filter((candidate) => {
+    const sameSource = candidate.sourceInboxId && candidate.sourceInboxId === item.id;
+    const legacyInboxMatch = String(candidate.title || "").trim().toLowerCase() === title
+      && candidate.area === (category.area || item.parsed?.area || "admin")
+      && (candidate.tags || []).includes("inbox");
+    return sameSource || legacyInboxMatch;
+  });
+}
+
 function createTaskFromInbox(item, status = "backlog") {
   if (!item) return null;
   const existing = item.linkedType === "task" ? getInboxLinkedObject(item) : null;
@@ -1689,10 +1701,34 @@ function createTaskFromInbox(item, status = "backlog") {
     return existing;
   }
   const category = suggestCategoryForInbox(item);
+  const candidates = inboxTaskCandidates(item, category);
+  if (candidates.length) {
+    const recovered = candidates[0];
+    const duplicateIds = new Set(candidates.slice(1).map((candidate) => candidate.id));
+    if (duplicateIds.size) state.tasks = state.tasks.filter((candidate) => !duplicateIds.has(candidate.id));
+    if (item.linkedType === "note" && item.linkedId) {
+      state.notes = state.notes.filter((candidate) => candidate.id !== item.linkedId);
+    }
+    recovered.sourceInboxId = item.id;
+    recovered.previousStatus = recovered.status === "done" ? status : recovered.status;
+    recovered.status = status;
+    recovered.updatedAt = new Date().toISOString();
+    item.status = "processed";
+    item.linkedType = "task";
+    item.linkedId = recovered.id;
+    state.assistantActions.unshift(action(
+      duplicateIds.size ? "Дубли входящей задачи объединены" : "Входящее связано с задачей",
+      duplicateIds.size ? `${recovered.title}: удалено дублей ${duplicateIds.size}` : recovered.title,
+      "confirmed"
+    ));
+    selectTask(recovered.id);
+    return recovered;
+  }
   const projectItem = category.kind === "project" ? findByTitle(state.projects, category.title) : null;
   const routineItem = category.kind === "routine" ? findByTitle(state.routines, category.title) : null;
   const newTask = {
     ...task(item.parsed?.title || item.text, status, category.area || item.parsed?.area || "admin", item.parsed?.priority || "medium", 30, projectItem?.id || null),
+    sourceInboxId: item.id,
     routineId: routineItem?.id || null,
     tags: ["inbox"],
     needsReview: item.status === "needs_review" || Boolean(item.parsed?.needsReview)
@@ -1718,6 +1754,7 @@ function saveInboxAsNote(item) {
   const area = item.parsed?.area || "personal";
   const newNote = {
     id: crypto.randomUUID(),
+    sourceInboxId: item.id,
     type: item.parsed?.kind || "note",
     area,
     folderId: noteFolderForArea(area),
@@ -1770,6 +1807,7 @@ function handleInboxAction(actionName, item) {
   state.ui = state.ui || {};
   state.ui.selectedInboxId = item.id;
   if (actionName === "task-today") createTaskFromInbox(item, "today");
+  if (actionName === "convert-to-task") createTaskFromInbox(item, "today");
   if (actionName === "task-backlog") createTaskFromInbox(item, "backlog");
   if (actionName === "note") saveInboxAsNote(item);
   if (actionName === "open-linked") openInboxLinkedObject(item);
@@ -2740,13 +2778,14 @@ function renderSimpleNoteRow(item) {
 function renderSimpleInboxRow(item) {
   const linked = getInboxLinkedObject(item);
   const kindLabel = labelForKind(item.parsed?.kind || "note");
+  const openLabel = item.linkedType === "task" ? "Открыть задачу" : item.linkedType === "note" ? "Открыть заметку" : "Открыть";
   return `<article class="simple-inbox-row ${item.status === "needs_review" ? "needs-review" : ""}" data-inbox-id="${escapeHtml(item.id)}">
     <div class="simple-inbox-state"><span>${escapeHtml(inboxStatusLabel(item.status))}</span><small>${escapeHtml(kindLabel)}</small></div>
     <div class="simple-inbox-copy"><strong>${escapeHtml(item.parsed?.title || item.text)}</strong><p>${escapeHtml(item.text)}</p><small>${linked ? `${escapeHtml(inboxLinkedTypeLabel(item))} · ${escapeHtml(inboxDestinationLabel(item, linked))}` : escapeHtml(item.parsed?.reason || "Ожидает решения")}</small></div>
     <div class="simple-inbox-actions">
-      ${linked ? `<button type="button" class="primary" data-inbox-action="open-linked">Открыть</button>` : ""}
-      ${item.linkedType !== "task" ? `<button type="button" data-inbox-action="task-today">Задача сегодня</button>` : ""}
-      ${item.linkedType !== "note" ? `<button type="button" data-inbox-action="note">Сохранить заметкой</button>` : ""}
+      ${linked ? `<button type="button" class="primary" data-inbox-action="open-linked">${openLabel}</button>` : ""}
+      ${linked && item.linkedType === "note" ? `<button type="button" data-inbox-action="convert-to-task">Сделать задачей</button>` : ""}
+      ${!linked ? `<button type="button" data-inbox-action="task-today">Задача на сегодня</button><button type="button" data-inbox-action="note">Сохранить заметкой</button>` : ""}
       <button type="button" class="danger-text" data-inbox-action="delete">Удалить</button>
     </div>
   </article>`;

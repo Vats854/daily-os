@@ -1,4 +1,4 @@
-const CACHE_NAME = "second-brain-command-center-v139";
+const CACHE_NAME = "second-brain-command-center-v140";
 const ASSETS = [
   "/",
   "/index.html",
