@@ -21,7 +21,7 @@ import {
   setTaskWorkflowStatus,
   serializeStateSnapshot,
   updateTaskRecord
-} from "./task-state.js?v=145";
+} from "./task-state.js?v=146";
 
 const STORAGE_KEY = "second-brain-command-center:v1";
 const CONFLICT_BACKUP_KEY = "second-brain-command-center:conflict-backup";
@@ -1648,55 +1648,6 @@ function getInboxLinkedObject(item) {
   return null;
 }
 
-function inboxSuggestedKind(item) {
-  if (item?.parsed?.kind === "project" || /(проект|цель|запустить|начать|новый трек|новое направление)/i.test(item?.text || "")) return "project";
-  if (["task", "plan_change"].includes(item?.parsed?.kind)) return "task";
-  return "note";
-}
-
-function inboxSuggestedStatus(item) {
-  return taskStatuses.includes(item?.parsed?.status) ? item.parsed.status : "backlog";
-}
-
-function createProjectFromInbox(item) {
-  if (!item) return null;
-  const existing = item.linkedType === "project" ? getInboxLinkedObject(item) : null;
-  if (existing) return existing;
-  const sourceProject = state.projects.find((candidate) => candidate.sourceInboxId === item.id);
-  if (sourceProject) {
-    item.status = "processed";
-    item.linkedType = "project";
-    item.linkedId = sourceProject.id;
-    return sourceProject;
-  }
-  const overload = state.tasks.filter((candidate) => candidate.planBucket === "today" && candidate.workflowStatus !== "done").length > 4
-    || state.dailyPlan.status === "overloaded";
-  const newProject = {
-    ...project({
-      title: item.parsed?.title || item.text,
-      area: item.parsed?.area || "personal",
-      progress: 0,
-      journeyStage: overload ? "call" : "commitment",
-      journeyStatus: overload ? "watch" : "active",
-      stageReason: overload
-        ? "Текущая загрузка требует отдельной проверки ресурса перед принятием проекта."
-        : "Проект подтверждён из Inbox; следующим шагом нужно определить подготовку.",
-      nextTransition: overload
-        ? "Проверить ресурс и принять или отложить проект."
-        : "Собрать ресурсы, сроки и ограничения."
-    }),
-    sourceInboxId: item.id
-  };
-  state.projects.unshift(newProject);
-  state.selectedProjectId = newProject.id;
-  item.status = "processed";
-  item.linkedType = "project";
-  item.linkedId = newProject.id;
-  state.projectStageEvents.unshift(stageEvent(newProject.id, null, newProject.journeyStage, newProject.stageReason, "user", "confirmed"));
-  state.assistantActions.unshift(action("Входящее подтверждено как проект", newProject.title, "confirmed"));
-  return newProject;
-}
-
 function inboxTaskCandidates(item, category = suggestCategoryForInbox(item)) {
   const title = String(item?.parsed?.title || item?.text || "").trim().toLowerCase();
   if (!title) return [];
@@ -1836,13 +1787,6 @@ function handleInboxAction(actionName, item) {
   if (actionName === "task-today") createTaskFromInbox(item, "today");
   if (actionName === "convert-to-task") createTaskFromInbox(item, "today");
   if (actionName === "task-backlog") createTaskFromInbox(item, "backlog");
-  if (actionName === "project") createProjectFromInbox(item);
-  if (actionName === "accept-suggestion") {
-    const suggestedKind = inboxSuggestedKind(item);
-    if (suggestedKind === "task") createTaskFromInbox(item, inboxSuggestedStatus(item));
-    if (suggestedKind === "note") saveInboxAsNote(item);
-    if (suggestedKind === "project") createProjectFromInbox(item);
-  }
   if (actionName === "note") saveInboxAsNote(item);
   if (actionName === "open-linked") openInboxLinkedObject(item);
   if (actionName === "delete") deleteInboxItem(item);
@@ -1861,7 +1805,7 @@ function suggestCategoryForInbox(item) {
 
 function simpleViewMeta() {
   const module = currentSimpleModule();
-  if (module === "capture") return { title: "Входящие", subtitle: "Только записи, которые ещё не стали задачей, заметкой или проектом.", kind: "inbox" };
+  if (module === "capture") return { title: "Входящие", subtitle: "Сырые записи, которые ещё не стали задачами или заметками.", kind: "inbox" };
   if (module === "notes") {
     const folder = noteFolders().find((item) => item.id === state.ui?.selectedNoteFolderId);
     return {
@@ -2834,7 +2778,7 @@ function renderSimpleMainList(meta) {
     const items = activeInboxItems();
     return items.length
       ? items.map(renderSimpleInboxRow).join("")
-      : `<div class="simple-empty"><strong>Всё разобрано</strong><span>Новая мысль появится здесь только до того, как станет задачей, заметкой или проектом.</span></div>`;
+      : `<div class="simple-empty"><strong>Всё разобрано</strong><span>Новая запись останется здесь, пока ты не сохранишь её задачей или заметкой.</span></div>`;
   }
   if (meta.kind === "habits") {
     return state.habits.length
@@ -2903,33 +2847,20 @@ function renderSimpleNoteRow(item) {
   </article>`;
 }
 
-function inboxProposal(item) {
-  const kind = inboxSuggestedKind(item);
-  const area = listLabel(item.parsed?.area || "personal");
-  if (kind === "task") {
-    const status = inboxSuggestedStatus(item);
-    return {
-      label: `Задача · ${statusLabel(status)} · ${area}`,
-      action: status === "today" ? "Добавить на сегодня" : status === "this_week" ? "Добавить на неделю" : "Добавить в бэклог"
-    };
-  }
-  if (kind === "project") return { label: `Проект · ${area}`, action: "Создать проект" };
-  return { label: `Заметка · ${area}`, action: "Сохранить заметкой" };
-}
-
 function renderSimpleInboxRow(item) {
   const linked = getInboxLinkedObject(item);
   const kindLabel = inboxKindLabel(item.parsed?.kind || "note");
   const openLabel = item.linkedType === "task" ? "Открыть задачу" : item.linkedType === "note" ? "Открыть заметку" : "Открыть";
-  const proposal = inboxProposal(item);
-  const reason = item.parsed?.reason || `Ассистент определил тип «${kindLabel.toLowerCase()}» по формулировке и контексту.`;
+  const area = item.parsed?.area || "personal";
+  const taskDestination = listLabel(area);
+  const noteDestination = noteFolderLabel(noteFolderForArea(area));
   return `<article class="simple-inbox-row ${item.status === "needs_review" ? "needs-review" : ""}" data-inbox-id="${escapeHtml(item.id)}">
     <div class="simple-inbox-state"><span>${escapeHtml(inboxStatusLabel(item.status))}</span><small>${escapeHtml(kindLabel)}</small></div>
-    <div class="simple-inbox-copy"><strong>${escapeHtml(item.parsed?.title || item.text)}</strong><p>${escapeHtml(item.text)}</p>${linked ? `<small>${escapeHtml(inboxLinkedTypeLabel(item))} · ${escapeHtml(inboxDestinationLabel(item, linked))}</small>` : `<div class="simple-inbox-proposal"><span>Предложение ассистента</span><strong>${escapeHtml(proposal.label)}</strong><p>${escapeHtml(reason)}</p></div>`}</div>
+    <div class="simple-inbox-copy"><strong>${escapeHtml(item.parsed?.title || item.text)}</strong><p>${escapeHtml(item.text)}</p>${linked ? `<small>${escapeHtml(inboxLinkedTypeLabel(item))} · ${escapeHtml(inboxDestinationLabel(item, linked))}</small>` : `<small class="simple-inbox-pending">Выбери результат. Без выбора запись останется во Входящих.</small>`}</div>
     <div class="simple-inbox-actions">
       ${linked ? `<button type="button" class="primary" data-inbox-action="open-linked">${openLabel}</button>` : ""}
       ${linked && item.linkedType === "note" ? `<button type="button" data-inbox-action="convert-to-task">Сделать задачей</button>` : ""}
-      ${!linked ? `<button type="button" class="primary" data-inbox-action="accept-suggestion">${escapeHtml(proposal.action)}</button><details class="simple-inbox-alternatives"><summary>Другой вариант</summary><div><button type="button" data-inbox-action="task-today">Задача на сегодня</button><button type="button" data-inbox-action="task-backlog">Задача в бэклог</button><button type="button" data-inbox-action="note">Заметка</button><button type="button" data-inbox-action="project">Проект</button></div></details>` : ""}
+      ${!linked ? `<button type="button" class="primary" data-inbox-action="task-today"><span>Сегодня</span><small>${escapeHtml(taskDestination)}</small></button><button type="button" data-inbox-action="task-backlog"><span>В бэклог</span><small>${escapeHtml(taskDestination)}</small></button><button type="button" data-inbox-action="note"><span>Заметка</span><small>${escapeHtml(noteDestination)}</small></button>` : ""}
       <button type="button" class="danger-text" data-inbox-action="delete">Удалить</button>
     </div>
   </article>`;
