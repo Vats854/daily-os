@@ -21,7 +21,7 @@ import {
   setTaskWorkflowStatus,
   serializeStateSnapshot,
   updateTaskRecord
-} from "./task-state.js?v=144";
+} from "./task-state.js?v=145";
 
 const STORAGE_KEY = "second-brain-command-center:v1";
 const CONFLICT_BACKUP_KEY = "second-brain-command-center:conflict-backup";
@@ -313,7 +313,8 @@ let networkOffline = !navigator.onLine;
 let calendarInstance = null;
 let calendarTaskDraggable = null;
 let calendarEngineFailed = false;
-let calendarReminderTimers = [];
+let reminderTimers = [];
+const deliveredReminderKeys = new Set();
 let calendarPendingEdit = null;
 state.ui = state.ui || {};
 state.ui.selectedDayBlockIndex = Number.isInteger(state.ui.selectedDayBlockIndex) ? state.ui.selectedDayBlockIndex : 1;
@@ -543,6 +544,13 @@ function normalizeState(nextState) {
     block.date = /^\d{4}-\d{2}-\d{2}$/.test(block.date || "") ? block.date : (nextState.dailyPlan.date || todayIso);
     block.endDate = /^\d{4}-\d{2}-\d{2}$/.test(block.endDate || "") && block.endDate >= block.date ? block.endDate : block.date;
     block.taskId = block.taskId || "";
+    block.recurrence = ["none", "daily", "weekdays", "weekly"].includes(block.recurrence) ? block.recurrence : "none";
+    const reminderMinutes = block.reminderMinutes === null || block.reminderMinutes === undefined || block.reminderMinutes === ""
+      ? null
+      : Number(block.reminderMinutes);
+    block.reminderMinutes = Number.isFinite(reminderMinutes) && reminderMinutes >= 0 && reminderMinutes <= 10080
+      ? reminderMinutes
+      : null;
   });
   nextState.weeklyPlan = { ...seedState.weeklyPlan, ...(nextState.weeklyPlan || {}) };
   nextState.projects = Array.isArray(nextState.projects) ? nextState.projects : structuredClone(seedState.projects);
@@ -1526,6 +1534,20 @@ function formatShortDate(value) {
   return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" }).format(date);
 }
 
+function renderReminderOptions(value) {
+  const current = value === null || value === undefined || value === "" ? "" : String(Number(value));
+  return [
+    ["", "Без напоминания"],
+    ["0", "В момент начала"],
+    ["5", "За 5 минут"],
+    ["10", "За 10 минут"],
+    ["15", "За 15 минут"],
+    ["30", "За 30 минут"],
+    ["60", "За 1 час"],
+    ["1440", "За 1 день"]
+  ].map(([option, label]) => `<option value="${option}" ${current === option ? "selected" : ""}>${label}</option>`).join("");
+}
+
 function renderOptionChips(field, options, current, labels = {}) {
   return options.map((value) => `<button
     class="option-chip ${String(current) === String(value) ? "active" : ""}"
@@ -2117,7 +2139,7 @@ function renderSimpleApp() {
   appearanceMenu.querySelectorAll("[data-appearance-theme]").forEach((button) => button.classList.toggle("active", button.dataset.appearanceTheme === state.settings.appearanceTheme));
   appearanceMenu.querySelectorAll("[data-appearance-font]").forEach((button) => button.classList.toggle("active", button.dataset.appearanceFont === state.settings.appearanceFont));
   if (module === "calendar") window.requestAnimationFrame(mountInteractiveCalendar);
-  scheduleCalendarReminders();
+  scheduleSystemReminders();
 }
 
 function renderSimpleSyncPanel() {
@@ -2474,26 +2496,85 @@ function saveCalendarDraft() {
   saveState();
 }
 
-function scheduleCalendarReminders() {
-  calendarReminderTimers.forEach((timer) => window.clearTimeout(timer));
-  calendarReminderTimers = [];
+async function deliverSystemReminder({ key, title, body, url = "/" }) {
+  if (deliveredReminderKeys.has(key)) return;
+  deliveredReminderKeys.add(key);
+  const options = {
+    body,
+    tag: key,
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    data: { url }
+  };
+  try {
+    const registration = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistration() : null;
+    if (registration?.showNotification) {
+      await registration.showNotification(title, options);
+      return;
+    }
+    const notification = new Notification(title, options);
+    notification.onclick = () => window.focus();
+  } catch {
+    deliveredReminderKeys.delete(key);
+  }
+}
+
+async function requestReminderPermission() {
+  if (!("Notification" in window)) return "unsupported";
+  if (Notification.permission === "default") return Notification.requestPermission();
+  return Notification.permission;
+}
+
+function notificationPermissionLabel() {
+  if (!("Notification" in window)) return "Системные уведомления не поддерживаются этим браузером.";
+  if (Notification.permission === "granted") return "Системные уведомления включены.";
+  if (Notification.permission === "denied") return "Уведомления запрещены в настройках браузера.";
+  return "При выборе напоминания браузер запросит разрешение.";
+}
+
+function taskReminderStatus(item) {
+  if (item.reminderMinutes === null || item.reminderMinutes === undefined) return "";
+  if (!item.dueDate || !item.dueTime) return "Сначала укажи дату и время задачи.";
+  return notificationPermissionLabel();
+}
+
+function scheduleSystemReminders() {
+  reminderTimers.forEach((timer) => window.clearTimeout(timer));
+  reminderTimers = [];
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   const now = Date.now();
   const horizon = now + 8 * dayMs;
   const dates = Array.from({ length: 8 }, (_, index) => new Date(now + index * dayMs));
+
+  const schedule = ({ key, title, body, notifyAt, url }) => {
+    if (!Number.isFinite(notifyAt) || notifyAt <= now || notifyAt > horizon || deliveredReminderKeys.has(key)) return;
+    reminderTimers.push(window.setTimeout(() => deliverSystemReminder({ key, title, body, url }), notifyAt - now));
+  };
+
   state.dailyPlan.timeBlocks.forEach((block) => {
     if (block.reminderMinutes === null || block.reminderMinutes === undefined || block.reminderMinutes === "") return;
     calendarBlockOccurrenceDates(block, dates).forEach((date) => {
       const startsAt = new Date(`${date}T${block.start}:00`).getTime();
       const notifyAt = startsAt - Number(block.reminderMinutes || 0) * 60 * 1000;
-      if (notifyAt <= now || notifyAt > horizon) return;
-      calendarReminderTimers.push(window.setTimeout(() => {
-        const notification = new Notification(block.title, {
-          body: `Начало в ${block.start}`,
-          tag: `daily-os-${block.id}-${date}`
-        });
-        notification.onclick = () => window.focus();
-      }, notifyAt - now));
+      schedule({
+        key: `daily-os-block-${block.id}-${date}-${block.start}`,
+        title: block.title,
+        body: `Блок начнётся в ${block.start}`,
+        notifyAt,
+        url: "/"
+      });
+    });
+  });
+
+  state.tasks.forEach((item) => {
+    if (item.workflowStatus === "done" || !item.dueDate || !item.dueTime || item.reminderMinutes === null || item.reminderMinutes === undefined) return;
+    const startsAt = new Date(`${item.dueDate}T${item.dueTime}:00`).getTime();
+    schedule({
+      key: `daily-os-task-${item.id}-${item.dueDate}-${item.dueTime}`,
+      title: item.title,
+      body: `Задача запланирована на ${item.dueTime}`,
+      notifyAt: startsAt - Number(item.reminderMinutes || 0) * 60 * 1000,
+      url: "/"
     });
   });
 }
@@ -2934,17 +3015,10 @@ function renderSimpleDetail(meta) {
           <option value="weekdays" ${calendarBlock.recurrence === "weekdays" ? "selected" : ""}>По будням</option>
           <option value="weekly" ${calendarBlock.recurrence === "weekly" ? "selected" : ""}>Каждую неделю</option>
         </select></label>
-        <label><span>Напоминание</span><select data-calendar-block-field="reminderMinutes">
-          <option value="" ${calendarBlock.reminderMinutes === null || calendarBlock.reminderMinutes === undefined || calendarBlock.reminderMinutes === "" ? "selected" : ""}>Без напоминания</option>
-          <option value="0" ${calendarBlock.reminderMinutes !== null && calendarBlock.reminderMinutes !== undefined && Number(calendarBlock.reminderMinutes) === 0 ? "selected" : ""}>В момент начала</option>
-          <option value="5" ${Number(calendarBlock.reminderMinutes) === 5 ? "selected" : ""}>За 5 минут</option>
-          <option value="10" ${Number(calendarBlock.reminderMinutes) === 10 ? "selected" : ""}>За 10 минут</option>
-          <option value="15" ${Number(calendarBlock.reminderMinutes) === 15 ? "selected" : ""}>За 15 минут</option>
-          <option value="30" ${Number(calendarBlock.reminderMinutes) === 30 ? "selected" : ""}>За 30 минут</option>
-          <option value="60" ${Number(calendarBlock.reminderMinutes) === 60 ? "selected" : ""}>За 1 час</option>
-        </select></label>
+        <label><span>Напоминание</span><select data-calendar-block-field="reminderMinutes">${renderReminderOptions(calendarBlock.reminderMinutes)}</select></label>
       </div>
       <label><span>Комментарий</span><textarea data-calendar-block-field="nextAction" placeholder="Что должно произойти в этом блоке">${escapeHtml(calendarBlock.nextAction || "")}</textarea></label>
+      ${calendarBlock.reminderMinutes !== null && calendarBlock.reminderMinutes !== undefined ? `<p class="calendar-notification-state">${escapeHtml(notificationPermissionLabel())}</p>` : ""}
       <p class="calendar-block-hint">Диапазон дат создаёт одинаковый блок ${escapeHtml(calendarBlock.start)}–${escapeHtml(calendarBlock.end)} в каждом выбранном дне. Изменения попадут в календарь только после сохранения.</p>
       <div class="calendar-block-actions">
         <button type="button" class="simple-secondary-button" data-simple-action="cancel-calendar-block">Отмена</button>
@@ -2958,7 +3032,9 @@ function renderSimpleDetail(meta) {
     : null;
   if (taskItem) {
     const dueLabels = { "": "Без даты", [todayIso]: "Сегодня", [addDaysIso(1)]: "Завтра", [addDaysIso(7)]: "На неделе" };
-    const dueSummary = taskItem.dueDate ? dueLabels[taskItem.dueDate] || formatShortDate(taskItem.dueDate) : "Без даты";
+    const dueSummary = taskItem.dueDate
+      ? `${dueLabels[taskItem.dueDate] || formatShortDate(taskItem.dueDate)}${taskItem.dueTime ? ` · ${taskItem.dueTime}` : ""}`
+      : "Без даты";
     const knownTags = allTaskTags();
     const focusActive = state.focus?.selectedTaskId === taskItem.id && state.focus?.running;
     return `<section class="simple-detail-card" data-task-id="${escapeHtml(taskItem.id)}">
@@ -3001,6 +3077,8 @@ function renderSimpleDetail(meta) {
         <label class="simple-task-menu-row"><span>Список</span><select data-task-field="area">${taskLists().map(({ id, title }) => `<option value="${escapeHtml(id)}" ${taskItem.area === id ? "selected" : ""}>${escapeHtml(title)}</option>`).join("")}</select></label>
         <label class="simple-task-menu-row"><span>План</span><select data-task-field="planBucket">${planBuckets.map(([id, title]) => `<option value="${id}" ${taskItem.planBucket === id ? "selected" : ""}>${escapeHtml(title)}</option>`).join("")}</select></label>
         <label class="simple-task-menu-row"><span>Этап</span><select data-task-field="workflowStatus">${workflowColumns.map(([id, title]) => `<option value="${id}" ${taskItem.workflowStatus === id ? "selected" : ""}>${escapeHtml(title)}</option>`).join("")}</select></label>
+        <label class="simple-task-menu-row"><span>Дата и время</span><div class="simple-task-date-time"><input type="date" data-task-field="dueDate" value="${escapeHtml(taskItem.dueDate || "")}" /><input type="time" step="300" data-task-field="dueTime" value="${escapeHtml(taskItem.dueTime || "")}" /></div></label>
+        <label class="simple-task-menu-row"><span>Напоминание</span><select data-task-field="reminderMinutes" ${!taskItem.dueDate || !taskItem.dueTime ? "disabled" : ""}>${renderReminderOptions(taskItem.reminderMinutes)}</select>${taskReminderStatus(taskItem) ? `<small>${escapeHtml(taskReminderStatus(taskItem))}</small>` : ""}</label>
         <label class="simple-task-menu-row"><span>Длительность</span><select data-task-field="estimate">${[15, 25, 45, 60].map((value) => `<option value="${value}" ${Number(taskItem.estimate) === value ? "selected" : ""}>${value} мин</option>`).join("")}</select></label>
         <label class="simple-task-menu-row"><span>Теги</span><input data-task-field="tags" value="${escapeHtml((taskItem.tags || []).join(", "))}" placeholder="Добавить теги" /></label>
         <div class="simple-task-command-list">
@@ -4176,9 +4254,10 @@ document.querySelector("#simpleApp")?.addEventListener("change", (event) => {
     if (["title", "date", "endDate", "start", "end", "nextAction", "recurrence"].includes(field)) block[field] = value;
     if (field === "reminderMinutes") {
       block.reminderMinutes = value === "" ? null : Number(value);
-      if (value !== "" && "Notification" in window && Notification.permission === "default") {
-        Notification.requestPermission().then(scheduleCalendarReminders);
-      }
+      if (value !== "") requestReminderPermission().then(() => {
+        scheduleSystemReminders();
+        renderSimpleApp();
+      });
     }
     if (!block.endDate || block.endDate < block.date) block.endDate = block.date;
     if (!block.title.trim()) block.title = "Новый блок";
@@ -4192,7 +4271,12 @@ document.querySelector("#simpleApp")?.addEventListener("change", (event) => {
   if (taskField) {
     const taskRoot = taskField.closest("[data-task-id]");
     const item = state.tasks.find((candidate) => candidate.id === taskRoot?.dataset.taskId);
-    updateTaskField(item, taskField.dataset.taskField, taskField.value);
+    const field = taskField.dataset.taskField;
+    updateTaskField(item, field, taskField.value);
+    if (field === "reminderMinutes" && taskField.value !== "") requestReminderPermission().then(() => {
+      scheduleSystemReminders();
+      renderSimpleApp();
+    });
     saveState();
     return;
   }

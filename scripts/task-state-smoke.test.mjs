@@ -59,6 +59,9 @@ test("task survives create, edit and reload", () => {
   updateTaskRecord(task, "title", "Проверить сохранение после reload", { now: updatedAt });
   updateTaskRecord(task, "priority", "high", { priorities: ["low", "medium", "high"], now: updatedAt });
   updateTaskRecord(task, "tags", "smoke, persistence", { now: updatedAt });
+  updateTaskRecord(task, "dueDate", "2026-07-15", { now: updatedAt });
+  updateTaskRecord(task, "dueTime", "09:30", { now: updatedAt });
+  updateTaskRecord(task, "reminderMinutes", "15", { now: updatedAt });
 
   const restored = parseStateSnapshot(serializeStateSnapshot({ tasks: [task] }));
   assert.deepEqual(restored.tasks[0], {
@@ -66,8 +69,30 @@ test("task survives create, edit and reload", () => {
     title: "Проверить сохранение после reload",
     priority: "high",
     tags: ["smoke", "persistence"],
+    dueDate: "2026-07-15",
+    dueTime: "09:30",
+    reminderMinutes: 15,
     updatedAt
   });
+});
+
+test("task reminder is normalized and cleared with its schedule", () => {
+  const task = createTaskRecord({ id: "task-reminder", title: "Задача с напоминанием", now: "2026-07-15T08:00:00.000Z" });
+
+  updateTaskRecord(task, "dueDate", "2026-07-16");
+  updateTaskRecord(task, "dueTime", "10:45");
+  updateTaskRecord(task, "reminderMinutes", "30");
+  assert.equal(task.dueTime, "10:45");
+  assert.equal(task.reminderMinutes, 30);
+
+  updateTaskRecord(task, "dueDate", "");
+  assert.equal(task.dueDate, "");
+  assert.equal(task.dueTime, "");
+  assert.equal(task.reminderMinutes, null);
+
+  const legacy = normalizeTaskRecord({ id: "legacy-reminder", title: "Старая задача" });
+  assert.equal(legacy.dueTime, "");
+  assert.equal(legacy.reminderMinutes, null);
 });
 
 test("invalid persisted snapshots are rejected", () => {

@@ -21,11 +21,12 @@ Single expert user building a personal Life OS around work search, projects, tra
 ## Primary objects
 
 - Inbox item: raw thought or incoming input that needs interpretation.
-- Task: executable action with independent planning horizon (`inbox`, `backlog`, `this_week`, `today`) and workflow stage (`todo`, `in_progress`, `done`).
+- Task: executable action with independent planning horizon (`inbox`, `backlog`, `this_week`, `today`), workflow stage (`todo`, `in_progress`, `done`), and optional due date, time, and reminder.
 - Daily plan: accepted blocks of the day and linked tasks.
 - Weekly focus: strategic stake for the week, not a checkbox task.
 - Project: long-running life/work focus with stage, quest, blockers, and transition criteria.
 - AI action: auditable change, suggestion, challenge, or classification.
+- Calendar block: an accepted time commitment with optional recurrence and system reminder.
 
 ## Navigation model
 

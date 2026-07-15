@@ -1,4 +1,4 @@
-const CACHE_NAME = "second-brain-command-center-v144";
+const CACHE_NAME = "second-brain-command-center-v145";
 const ASSETS = [
   "/",
   "/index.html",
@@ -48,5 +48,21 @@ self.addEventListener("fetch", (event) => {
         return response;
       })
       .catch(() => caches.match(event.request))
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = new URL(event.notification.data?.url || "/", self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (clients) => {
+      const existing = clients.find((client) => client.url.startsWith(self.location.origin));
+      if (existing) {
+        await existing.focus();
+        if ("navigate" in existing) await existing.navigate(targetUrl);
+        return;
+      }
+      await self.clients.openWindow(targetUrl);
+    })
   );
 });

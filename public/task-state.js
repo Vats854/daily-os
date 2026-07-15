@@ -29,6 +29,8 @@ export function createTaskRecord({
     previousStatus: normalizedPlanBucket,
     previousWorkflowStatus: normalizedWorkflowStatus === "done" ? "todo" : normalizedWorkflowStatus,
     dueDate: "",
+    dueTime: "",
+    reminderMinutes: null,
     tags: [],
     pinned: false,
     description: "",
@@ -61,7 +63,21 @@ export function updateTaskRecord(item, field, value, options = {}) {
   if (field === "area" && areas.includes(value)) item.area = value;
   if (field === "priority" && priorities.includes(value)) item.priority = value;
   if (field === "estimate") item.estimate = Math.max(5, Math.min(480, Number(value) || 30));
-  if (field === "dueDate") item.dueDate = value || "";
+  if (field === "dueDate") {
+    item.dueDate = value || "";
+    if (!item.dueDate) {
+      item.dueTime = "";
+      item.reminderMinutes = null;
+    }
+  }
+  if (field === "dueTime") {
+    item.dueTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || "")) ? String(value) : "";
+    if (!item.dueTime) item.reminderMinutes = null;
+  }
+  if (field === "reminderMinutes") {
+    const minutes = value === "" || value === null || value === undefined ? null : Number(value);
+    item.reminderMinutes = Number.isFinite(minutes) && minutes >= 0 && minutes <= 10080 ? minutes : null;
+  }
   if (field === "tags") {
     item.tags = String(value || "")
       .split(",")
@@ -94,6 +110,11 @@ export function normalizeTaskRecord(item) {
   item.previousWorkflowStatus = workflowStatuses.includes(item.previousWorkflowStatus) && item.previousWorkflowStatus !== "done"
     ? item.previousWorkflowStatus
     : "todo";
+  item.dueDate = /^\d{4}-\d{2}-\d{2}$/.test(item.dueDate || "") ? item.dueDate : "";
+  item.dueTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(item.dueTime || "") ? item.dueTime : "";
+  item.reminderMinutes = item.reminderMinutes !== null && item.reminderMinutes !== "" && Number.isFinite(Number(item.reminderMinutes)) && Number(item.reminderMinutes) >= 0
+    ? Number(item.reminderMinutes)
+    : null;
   syncLegacyTaskStatus(item);
   return item;
 }

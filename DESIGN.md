@@ -99,3 +99,5 @@ Job: execution progress independently from planning horizon.
 - Frequent actions should feel instant, not animated.
 - Motion should explain state or provide feedback; no decorative looping.
 - Error/empty states should say what to do next.
+- Reminder controls belong to the task or calendar object they affect; do not create a separate notification dashboard.
+- Date, time, and reminder are progressive metadata: a reminder is unavailable until its object has a concrete date and time.
