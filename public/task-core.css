@@ -617,10 +617,23 @@ body[data-auth] .simple-app[data-module="calendar"].detail-open {
 .simple-habit-group > header strong { color: #9aa5b3; }
 .simple-habit-row { grid-template-columns: 26px minmax(0, 1fr) auto; }
 .simple-habit-controls { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
-.simple-habit-controls select { max-width: 118px; padding: 5px 22px 5px 7px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--core-muted); font: inherit; font-size: 11px; }
-.simple-habit-controls select:hover,
-.simple-habit-controls select:focus { border-color: var(--core-line); background: var(--core-surface); outline: 0; }
+.simple-habit-controls > span { color: var(--core-muted); font-size: 11px; white-space: nowrap; }
 .simple-habit-week { display: grid; grid-template-columns: repeat(7, 12px); gap: 6px; align-items: center; }
+
+.simple-habit-weekday-field { border: 0; margin: 0; padding: 0; }
+.simple-habit-weekday-field legend { color: var(--core-muted); font-size: 11px; font-weight: 750; margin-bottom: 8px; text-transform: uppercase; }
+.simple-habit-weekday-field > div { display: grid; gap: 5px; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.simple-habit-weekday-field button { aspect-ratio: 1; border: 1px solid var(--core-line); border-radius: 50%; color: var(--core-muted); padding: 0; }
+.simple-habit-weekday-field button.active { background: var(--core-blue-soft); border-color: var(--core-blue); color: var(--core-blue); }
+.simple-habit-editor-stats { border-block: 1px solid var(--core-line); display: grid; gap: 4px 12px; grid-template-columns: 1fr auto; padding-block: 14px; }
+.simple-habit-editor-stats span { color: var(--core-muted); }
+.simple-habit-editor-stats strong { font-variant-numeric: tabular-nums; }
+.simple-habit-editor > .danger-text { align-self: flex-start; border: 0; background: transparent; color: var(--core-danger); font-size: 12px; font-weight: 700; padding: 2px 0; }
+.simple-habit-editor > .danger-text:hover { text-decoration: underline; }
+.simple-habit-archive { border-top: 1px solid var(--core-line); margin-top: 24px; padding-top: 14px; }
+.simple-habit-archive summary { color: var(--core-muted); cursor: pointer; font-size: 13px; font-weight: 700; list-style: none; }
+.simple-habit-archive summary span { float: right; }
+.simple-habit-archive[open] summary { margin-bottom: 8px; }
 .simple-habit-dot { width: 10px; height: 10px; border: 1px solid #d6dde5; border-radius: 50%; background: #f7f9fb; }
 .simple-habit-dot.done { border-color: #4f8f71; background: #4f8f71; }
 .simple-habit-dot.today { box-shadow: 0 0 0 3px rgba(62, 105, 155, .12); }

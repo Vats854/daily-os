@@ -101,6 +101,8 @@ const dayMs = 24 * 60 * 60 * 1000;
 const taskStatuses = ["inbox", "backlog", "this_week", "today", "done"];
 const priorities = ["low", "medium", "high"];
 const habitGroups = ["morning", "afternoon", "night", "anytime"];
+const allHabitWeekdays = [1, 2, 3, 4, 5, 6, 0];
+const habitWeekdayLabels = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 const habitGroupLabels = {
   morning: "Утро",
   afternoon: "День",
@@ -383,6 +385,8 @@ function habit(title, area = "personal", streak = 0) {
     title,
     area,
     group: area === "health" ? "afternoon" : title.toLowerCase().includes("вечер") ? "night" : "morning",
+    weekdays: [...allHabitWeekdays],
+    archived: false,
     streak,
     completions: {},
     createdAt: new Date().toISOString()
@@ -560,6 +564,11 @@ function normalizeState(nextState) {
     item.completions = item.completions || {};
     item.streak = Number.isFinite(item.streak) ? item.streak : 0;
     item.group = habitGroups.includes(item.group) ? item.group : "anytime";
+    item.weekdays = Array.isArray(item.weekdays)
+      ? [...new Set(item.weekdays.map(Number).filter((day) => day >= 0 && day <= 6))]
+      : [...allHabitWeekdays];
+    if (!item.weekdays.length) item.weekdays = [...allHabitWeekdays];
+    item.archived = Boolean(item.archived);
   });
   nextState.notes = Array.isArray(nextState.notes) ? nextState.notes : [];
   nextState.noteFolders = Array.isArray(nextState.noteFolders) && nextState.noteFolders.length
@@ -2263,7 +2272,7 @@ function simpleViewMeta() {
     };
   }
   if (module === "calendar") return { title: "Календарь", subtitle: "События и занятость без смешивания со списком задач.", kind: "calendar" };
-  if (module === "habits") return { title: "Привычки", subtitle: "Ежедневные ритуалы, серии и отметки за сегодня.", kind: "habits" };
+  if (module === "habits") return { title: "Привычки", subtitle: "Ритуалы по расписанию, серии и отметки за сегодня.", kind: "habits" };
   if (module === "focus") return { title: "Фокус", subtitle: "Таймер, выбранная задача и звуковой фон.", kind: "focus" };
   if (module === "projects") return { title: "Проекты", subtitle: "Долгие цели, текущая стадия, препятствия и следующий переход.", kind: "projects" };
   if (module === "log") return { title: "Журнал", subtitle: "Что система изменила, почему и с каким статусом.", kind: "log" };
@@ -2502,6 +2511,8 @@ function renderSimpleApp() {
     ? state.notes.some((item) => item.id === state.ui?.selectedNoteId)
     : module === "tasks"
       ? state.tasks.some((item) => item.id === state.ui?.selectedTaskId)
+      : module === "habits"
+        ? state.habits.some((item) => item.id === state.ui?.selectedHabitId)
       : module === "calendar" && Boolean(
           calendarPendingEdit?.draft?.id === state.ui?.selectedCalendarBlockId
           || state.dailyPlan.timeBlocks.some((item) => item.id === state.ui?.selectedCalendarBlockId)
@@ -3220,10 +3231,10 @@ function renderSimpleHabitRow(item) {
     .map((date) => `<span class="simple-habit-dot ${item.completions?.[date] ? "done" : ""} ${date === todayIso ? "today" : ""}" title="${escapeHtml(date)}"></span>`)
     .join("");
   const streakLabel = `${item.streak} ${russianPlural(item.streak, "день", "дня", "дней")}`;
-  return `<article class="simple-row simple-habit-row" data-habit-id="${escapeHtml(item.id)}">
+  return `<article class="simple-row simple-habit-row ${state.ui?.selectedHabitId === item.id ? "active" : ""}" data-habit-id="${escapeHtml(item.id)}" data-simple-object="habit">
     <button type="button" class="task-toggle ${done ? "done" : ""}" data-action="toggle-habit" title="Отметить"></button>
     <div><span>${escapeHtml(item.title)}</span><small>${escapeHtml(listLabel(item.area))} · серия ${escapeHtml(streakLabel)}</small></div>
-    <div class="simple-habit-controls"><select data-habit-field="group" aria-label="Время привычки">${habitGroups.map((group) => `<option value="${group}" ${item.group === group ? "selected" : ""}>${escapeHtml(habitGroupLabels[group])}</option>`).join("")}</select><div class="simple-habit-week" aria-label="Последние семь дней">${dots}</div></div>
+    <div class="simple-habit-controls"><span>${escapeHtml(habitGroupLabels[item.group])}</span><div class="simple-habit-week" aria-label="Последние семь дней">${dots}</div></div>
   </article>`;
 }
 
@@ -3237,18 +3248,36 @@ function russianPlural(value, one, few, many) {
 }
 
 function renderSimpleHabitGroups() {
-  const completed = state.habits.filter((item) => item.completions?.[todayIso]).length;
-  const score = state.habits.length ? Math.round((completed / state.habits.length) * 100) : 0;
-  return `<div class="simple-habits-summary"><div><span class="label">Сегодня</span><strong>${completed}/${state.habits.length}</strong></div><div class="simple-habits-progress"><i style="width:${score}%"></i></div><span>${score}%</span></div>
+  const todayWeekday = new Date(`${todayIso}T12:00:00`).getDay();
+  const activeHabits = state.habits.filter((item) => !item.archived && item.weekdays.includes(todayWeekday));
+  const archivedHabits = state.habits.filter((item) => item.archived);
+  const completed = activeHabits.filter((item) => item.completions?.[todayIso]).length;
+  const score = activeHabits.length ? Math.round((completed / activeHabits.length) * 100) : 0;
+  return `<div class="simple-habits-summary"><div><span class="label">Сегодня</span><strong>${completed}/${activeHabits.length}</strong></div><div class="simple-habits-progress"><i style="width:${score}%"></i></div><span>${score}%</span></div>
     ${habitGroups.map((group) => {
-      const habits = state.habits.filter((item) => item.group === group);
+      const habits = activeHabits.filter((item) => item.group === group);
       if (!habits.length) return "";
       return `<section class="simple-habit-group"><header><span>${escapeHtml(habitGroupLabels[group])}</span><strong>${habits.length}</strong></header>${habits.map(renderSimpleHabitRow).join("")}</section>`;
-    }).join("")}`;
+    }).join("")}
+    ${!activeHabits.length ? `<div class="simple-empty-state"><strong>На сегодня привычек нет</strong><span>Создай привычку или включи сегодняшний день в её расписании.</span></div>` : ""}
+    ${archivedHabits.length ? `<details class="simple-habit-archive"><summary>Архив <span>${archivedHabits.length}</span></summary>${archivedHabits.map((item) => `<article class="simple-row" data-habit-id="${escapeHtml(item.id)}" data-simple-object="habit"><div><span>${escapeHtml(item.title)}</span><small>${escapeHtml(listLabel(item.area))}</small></div><button type="button" data-simple-action="restore-habit">Вернуть</button></article>`).join("")}</details>` : ""}`;
 }
 
 function renderSimpleDetail(meta) {
   const module = currentSimpleModule();
+  const habitItem = module === "habits" ? state.habits.find((item) => item.id === state.ui?.selectedHabitId) || null : null;
+  if (habitItem) {
+    const weekdays = Array.isArray(habitItem.weekdays) ? habitItem.weekdays : allHabitWeekdays;
+    return `<section class="simple-detail-card simple-habit-editor" data-habit-id="${escapeHtml(habitItem.id)}">
+      <div class="simple-detail-head"><span class="label">Привычка</span><button type="button" class="simple-detail-close" data-simple-action="close-habit-detail" aria-label="Закрыть"><img src="/icons/x.svg" alt="" /></button></div>
+      <label><span>Название</span><input data-habit-field="title" value="${escapeHtml(habitItem.title)}" /></label>
+      <label><span>Список</span><select data-habit-field="area">${taskLists().map((list) => `<option value="${escapeHtml(list.id)}" ${habitItem.area === list.id ? "selected" : ""}>${escapeHtml(list.title)}</option>`).join("")}</select></label>
+      <label><span>Время дня</span><select data-habit-field="group">${habitGroups.map((group) => `<option value="${group}" ${habitItem.group === group ? "selected" : ""}>${escapeHtml(habitGroupLabels[group])}</option>`).join("")}</select></label>
+      <fieldset class="simple-habit-weekday-field"><legend>Повторять</legend><div>${allHabitWeekdays.map((day) => `<button type="button" data-habit-weekday="${day}" class="${weekdays.includes(day) ? "active" : ""}" aria-pressed="${weekdays.includes(day)}">${habitWeekdayLabels[day]}</button>`).join("")}</div></fieldset>
+      <div class="simple-habit-editor-stats"><span>Серия</span><strong>${habitItem.streak} ${russianPlural(habitItem.streak, "день", "дня", "дней")}</strong><span>Отметок</span><strong>${Object.keys(habitItem.completions || {}).length}</strong></div>
+      <button type="button" class="danger-text" data-simple-action="archive-habit">${habitItem.archived ? "Вернуть из архива" : "Переместить в архив"}</button>
+    </section>`;
+  }
   const calendarBlock = module === "calendar"
     ? (calendarPendingEdit?.draft?.id === state.ui?.selectedCalendarBlockId
         ? calendarPendingEdit.draft
@@ -4986,8 +5015,11 @@ document.querySelector("#simpleApp")?.addEventListener("change", (event) => {
     const habitRoot = habitField.closest("[data-habit-id]");
     const item = state.habits.find((candidate) => candidate.id === habitRoot?.dataset.habitId);
     if (!item) return;
-    if (habitField.dataset.habitField === "group" && habitGroups.includes(habitField.value)) item.group = habitField.value;
-    state.assistantActions.unshift(action("Привычка обновлена", `${item.title}: ${habitGroupLabels[item.group]}.`, "confirmed"));
+    const field = habitField.dataset.habitField;
+    if (field === "title") item.title = habitField.value.trim() || item.title;
+    if (field === "area" && taskLists().some((list) => list.id === habitField.value)) item.area = habitField.value;
+    if (field === "group" && habitGroups.includes(habitField.value)) item.group = habitField.value;
+    state.assistantActions.unshift(action("Привычка обновлена", item.title, "confirmed"));
     saveState();
     return;
   }
@@ -5082,6 +5114,38 @@ document.querySelector("#simpleApp")?.addEventListener("input", (event) => {
 });
 
 document.querySelector("#simpleApp")?.addEventListener("click", async (event) => {
+  const habitWeekday = event.target.closest("[data-habit-weekday]");
+  if (habitWeekday) {
+    const item = state.habits.find((candidate) => candidate.id === habitWeekday.closest("[data-habit-id]")?.dataset.habitId);
+    const day = Number(habitWeekday.dataset.habitWeekday);
+    if (!item || !Number.isInteger(day)) return;
+    const next = new Set(item.weekdays || allHabitWeekdays);
+    if (next.has(day) && next.size > 1) next.delete(day);
+    else next.add(day);
+    item.weekdays = [...next];
+    state.assistantActions.unshift(action("Расписание привычки обновлено", item.title, "confirmed"));
+    saveState();
+    return;
+  }
+  const habitDetailAction = event.target.closest('[data-simple-action="close-habit-detail"], [data-simple-action="archive-habit"], [data-simple-action="restore-habit"]');
+  if (habitDetailAction) {
+    const item = state.habits.find((candidate) => candidate.id === habitDetailAction.closest("[data-habit-id]")?.dataset.habitId);
+    const actionType = habitDetailAction.dataset.simpleAction;
+    if (actionType === "close-habit-detail") state.ui.selectedHabitId = null;
+    if (item && ["archive-habit", "restore-habit"].includes(actionType)) {
+      item.archived = actionType === "archive-habit" ? !item.archived : false;
+      state.ui.selectedHabitId = item.archived ? null : item.id;
+      state.assistantActions.unshift(action(item.archived ? "Привычка архивирована" : "Привычка восстановлена", item.title, "confirmed"));
+    }
+    saveState();
+    return;
+  }
+  const habitRow = event.target.closest('[data-simple-object="habit"]');
+  if (habitRow && !event.target.closest('[data-action="toggle-habit"]')) {
+    state.ui.selectedHabitId = habitRow.dataset.habitId;
+    saveState();
+    return;
+  }
   const modeButton = event.target.closest("[data-focus-mode]");
   if (modeButton) {
     setFocusMode(modeButton.dataset.focusMode);
