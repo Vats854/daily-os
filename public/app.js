@@ -1489,20 +1489,6 @@ function rebalanceToday() {
 }
 
 function render() {
-  if (document.querySelector("#simpleApp")) {
-    renderSimpleApp();
-    return;
-  }
-  renderShell();
-  renderInbox();
-  renderToday();
-  renderNotes();
-  renderWeek();
-  renderProjects();
-  renderBoard();
-  renderFocusView();
-  renderLog();
-  renderAppInspector(state.settings.activeView);
   renderSimpleApp();
 }
 

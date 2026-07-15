@@ -10,9 +10,9 @@ const [html, app, styles, worker, supabaseClient] = await Promise.all([
 
 const contracts = [
   ["all primary modules exist", ["capture", "tasks", "calendar", "habits", "focus", "notes", "projects", "log"].every((module) => html.includes(`data-simple-module="${module}"`))],
-  ["production shell is the only live shell", html.includes('id="simpleApp"') && html.includes('id="legacyDashboardArchive"') && !html.includes('class="app-shell legacy-app"')],
-  ["legacy dashboard is archived outside the live DOM", html.includes('<template id="legacyDashboardArchive">') && html.includes('</template>')],
-  ["render exits after the production shell", /function render\(\) \{\s*if \(document\.querySelector\("#simpleApp"\)\) \{\s*renderSimpleApp\(\);\s*return;/m.test(app)],
+  ["production shell is the only shell", html.includes('id="simpleApp"') && !html.includes('legacyDashboardArchive') && !html.includes('class="app-shell')],
+  ["legacy dashboard markup is absent", !["todayView", "weekView", "projectsView", "boardView", "appInspectorContent"].some((id) => html.includes(`id="${id}"`))],
+  ["render has one production path", /function render\(\) \{\s*renderSimpleApp\(\);\s*\}/m.test(app)],
   ["task view memory is normalized", app.includes("nextState.ui.lastTaskView") && app.includes("state.ui.lastTaskView = state.settings.activeView")],
   ["focus controls are wired to the active shell", app.includes('document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>') && app.includes('event.target.closest("[data-sound-action]")')],
   ["live focus volume is wired", app.includes('event.target.closest(\'[data-focus-field="volume"]\')') && app.includes("focusRuntime.gain.gain.value")],
@@ -24,7 +24,7 @@ const contracts = [
   ["unsafe legacy upsert is disabled", supabaseClient.includes("SYNC_UPGRADE_REQUIRED") && !supabaseClient.includes('.from("daily_os_states").upsert')],
   ["sync diagnostics are accessible", html.includes('id="simpleSyncToggle"') && html.includes('id="simpleSyncPanel"') && app.includes("renderSimpleSyncPanel")],
   ["sync retry uses the safe queue", app.includes('data-simple-sync-action="retry"') && app.includes("queueCloudSave({ immediate: true })")],
-  ["asset versions match", html.includes("styles.css?v=137") && html.includes("task-core.css?v=137") && html.includes("app.js?v=137") && worker.includes("v137")],
+  ["asset versions match", html.includes("styles.css?v=138") && html.includes("task-core.css?v=138") && html.includes("app.js?v=138") && worker.includes("v138")],
   ["open detail grid overrides authenticated shell", styles.includes('body[data-auth] .simple-app.detail-open')],
   ["notes grid overrides authenticated shell", styles.includes('body[data-auth] .simple-app[data-module="notes"]')],
   ["Inbox composer does not default to the first custom list", !app.includes('meta.area || state.ui?.simpleArea || taskLists()[0]?.id')],
