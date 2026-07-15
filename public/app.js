@@ -5196,7 +5196,7 @@ window.addEventListener("online", () => {
   renderSimpleApp();
 });
 
-document.querySelector("#inboxForm").addEventListener("submit", async (event) => {
+document.querySelector("#inboxForm")?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const input = document.querySelector("#inboxText");
   const text = input.value.trim();
@@ -5205,7 +5205,7 @@ document.querySelector("#inboxForm").addEventListener("submit", async (event) =>
   await processInbox(text);
 });
 
-document.querySelector("#todayCaptureForm").addEventListener("submit", async (event) => {
+document.querySelector("#todayCaptureForm")?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const input = document.querySelector("#todayCaptureText");
   const text = input.value.trim();
@@ -5214,7 +5214,7 @@ document.querySelector("#todayCaptureForm").addEventListener("submit", async (ev
   await processInbox(text);
 });
 
-document.querySelector("#reviewForm").addEventListener("submit", (event) => {
+document.querySelector("#reviewForm")?.addEventListener("submit", (event) => {
   event.preventDefault();
   const input = document.querySelector("#reviewText");
   const text = input.value.trim();
@@ -5223,7 +5223,7 @@ document.querySelector("#reviewForm").addEventListener("submit", (event) => {
   processEveningReview(text);
 });
 
-document.querySelector("#todayView").addEventListener("click", (event) => {
+document.querySelector("#todayView")?.addEventListener("click", (event) => {
   const stateButton = event.target.closest("[data-status]");
   if (stateButton) {
     state.dailyPlan.status = stateButton.dataset.status;
@@ -5237,7 +5237,7 @@ document.querySelector("#todayView").addEventListener("click", (event) => {
   }
 });
 
-document.querySelector("#todayView").addEventListener("click", (event) => {
+document.querySelector("#todayView")?.addEventListener("click", (event) => {
   const dayBlock = event.target.closest('[data-action="select-day-block"]');
   if (!dayBlock) return;
   state.ui = state.ui || {};
@@ -5245,7 +5245,7 @@ document.querySelector("#todayView").addEventListener("click", (event) => {
   saveState();
 });
 
-document.querySelector("#inboxView").addEventListener("click", (event) => {
+document.querySelector("#inboxView")?.addEventListener("click", (event) => {
   const inboxAction = event.target.closest("[data-inbox-action]");
   if (inboxAction) {
     const row = inboxAction.closest("[data-inbox-id]");
@@ -5411,7 +5411,7 @@ document.body.addEventListener("change", (event) => {
   saveState();
 });
 
-document.querySelector("#quickTaskForm").addEventListener("submit", (event) => {
+document.querySelector("#quickTaskForm")?.addEventListener("submit", (event) => {
   event.preventDefault();
   const input = document.querySelector("#quickTaskTitle");
   const title = input.value.trim();
@@ -5421,11 +5421,11 @@ document.querySelector("#quickTaskForm").addEventListener("submit", (event) => {
   saveState();
 });
 
-document.querySelector("#addHabitToggle").addEventListener("click", () => {
+document.querySelector("#addHabitToggle")?.addEventListener("click", () => {
   document.querySelector("#habitComposer")?.classList.toggle("is-hidden");
 });
 
-document.querySelector("#habitComposer").addEventListener("submit", (event) => {
+document.querySelector("#habitComposer")?.addEventListener("submit", (event) => {
   event.preventDefault();
   const title = document.querySelector("#habitTitle").value.trim();
   if (!title) return;
@@ -5435,7 +5435,7 @@ document.querySelector("#habitComposer").addEventListener("submit", (event) => {
   saveState();
 });
 
-document.querySelector("#editFocus").addEventListener("click", () => {
+document.querySelector("#editFocus")?.addEventListener("click", () => {
   const focus = prompt("Фокус дня", state.dailyPlan.focus);
   if (!focus?.trim()) return;
   state.dailyPlan.focus = focus.trim();
@@ -5443,7 +5443,7 @@ document.querySelector("#editFocus").addEventListener("click", () => {
   saveState();
 });
 
-document.querySelector("#addWeeklyFocus").addEventListener("click", () => {
+document.querySelector("#addWeeklyFocus")?.addEventListener("click", () => {
   const title = prompt("Фокус недели");
   if (!title?.trim()) return;
   state.weeklyPlan.focus.unshift({ id: crypto.randomUUID(), title: title.trim(), area: "personal", progress: 0 });
@@ -5461,17 +5461,17 @@ function sweepBacklogToWeek() {
   state.assistantActions.unshift(action("Бэклог разложен", "До трёх важных задач подняты в неделю.", "confirmed"));
 }
 
-document.querySelector("#sweepBacklog").addEventListener("click", () => {
+document.querySelector("#sweepBacklog")?.addEventListener("click", () => {
   sweepBacklogToWeek();
   saveState();
 });
 
-document.querySelector("#reviewJourneys").addEventListener("click", () => {
+document.querySelector("#reviewJourneys")?.addEventListener("click", () => {
   state.projects.filter((item) => item.status !== "archived").forEach(reviewProjectJourney);
   saveState();
 });
 
-document.querySelector("#projectsView").addEventListener("click", (event) => {
+document.querySelector("#projectsView")?.addEventListener("click", (event) => {
   const projectElement = event.target.closest("[data-project-id]");
   if (!projectElement) return;
   const projectItem = state.projects.find((item) => item.id === projectElement.dataset.projectId);
@@ -5504,7 +5504,7 @@ document.querySelector("#projectsView").addEventListener("click", (event) => {
   }
 });
 
-document.querySelector("#runAutopilot").addEventListener("click", () => {
+document.querySelector("#runAutopilot")?.addEventListener("click", () => {
   const view = state.settings.activeView;
   if (view === "today") {
     rebalanceToday();
@@ -5529,7 +5529,7 @@ document.querySelector("#runAutopilot").addEventListener("click", () => {
   saveState();
 });
 
-document.querySelector("#appInspectorContent").addEventListener("change", async (event) => {
+document.querySelector("#appInspectorContent")?.addEventListener("change", async (event) => {
   const taskField = event.target.closest("[data-task-field]");
   if (taskField) {
     const taskRoot = taskField.closest("[data-task-id]");
@@ -5551,20 +5551,20 @@ document.querySelector("#appInspectorContent").addEventListener("change", async 
   }
 });
 
-document.querySelector("#appInspectorContent").addEventListener("input", (event) => {
+document.querySelector("#appInspectorContent")?.addEventListener("input", (event) => {
   const focusVolume = event.target.closest('[data-focus-field="volume"]');
   if (!focusVolume) return;
   updateFocusVolume(focusVolume.value);
 });
 
-document.querySelector("#appInspectorContent").addEventListener("keydown", (event) => {
+document.querySelector("#appInspectorContent")?.addEventListener("keydown", (event) => {
   const taskField = event.target.closest("[data-task-field]");
   if (!taskField || event.key !== "Enter" || event.target.tagName === "TEXTAREA") return;
   event.preventDefault();
   taskField.blur();
 });
 
-document.querySelector("#appInspectorContent").addEventListener("click", async (event) => {
+document.querySelector("#appInspectorContent")?.addEventListener("click", async (event) => {
   const taskOption = event.target.closest("[data-task-option]");
   if (taskOption) {
     const taskRoot = taskOption.closest("[data-task-id]");
@@ -5605,11 +5605,11 @@ document.querySelector("#appInspectorContent").addEventListener("click", async (
   }
 });
 
-document.querySelector("#globalSearch").addEventListener("input", (event) => {
+document.querySelector("#globalSearch")?.addEventListener("input", (event) => {
   renderSearchResults(event.target.value);
 });
 
-document.querySelector("#searchResults").addEventListener("click", (event) => {
+document.querySelector("#searchResults")?.addEventListener("click", (event) => {
   const item = event.target.closest("[data-search-type]");
   if (!item) return;
   const type = item.dataset.searchType;
@@ -5665,7 +5665,7 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-document.querySelector("#resetDemo").addEventListener("click", () => {
+document.querySelector("#resetDemo")?.addEventListener("click", () => {
   if (!confirm("Сбросить демо-данные?")) return;
   state = structuredClone(seedState);
   saveState();
