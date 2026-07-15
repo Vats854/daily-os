@@ -121,7 +121,7 @@ const soundCategories = {
   rain: "Дождь",
   brown_noise: "Коричневый шум"
 };
-const simpleTaskViews = new Set(["today", "week", "inbox", "board", "done"]);
+const simpleTaskViews = new Set(["today", "week", "board", "done"]);
 
 const focusRuntime = {
   timerId: null,
@@ -484,6 +484,9 @@ function normalizeState(nextState) {
   nextState.ui.simpleModule = simpleModules.has(nextState.ui.simpleModule)
     ? nextState.ui.simpleModule
     : nextState.settings.activeView === "notes" ? "notes" : "tasks";
+  if (nextState.ui.simpleModule === "tasks" && nextState.settings.activeView === "inbox") {
+    nextState.settings.activeView = "board";
+  }
   nextState.ui.lastTaskView = simpleTaskViews.has(nextState.ui.lastTaskView)
     ? nextState.ui.lastTaskView
     : (simpleTaskViews.has(nextState.settings.activeView) ? nextState.settings.activeView : "today");
@@ -1835,12 +1838,12 @@ function suggestCategoryForInbox(item) {
 
 function simpleViewMeta() {
   const module = currentSimpleModule();
-  if (module === "capture") return { title: "Входящие", subtitle: "Сырая мысль превращается в понятный объект с объяснением ассистента.", kind: "inbox" };
+  if (module === "capture") return { title: "Входящие", subtitle: "Только записи, которые ещё не стали задачей, заметкой или проектом.", kind: "inbox" };
   if (module === "notes") {
     const folder = noteFolders().find((item) => item.id === state.ui?.selectedNoteFolderId);
     return {
       title: folder?.title || (state.ui?.selectedNoteFolderId === "unfiled" ? "Без папки" : "Заметки"),
-      subtitle: folder ? "Документы выбранной папки." : "Конспекты, мысли и контекст — отдельно от задач.",
+      subtitle: folder ? "Материалы выбранной папки — без статуса выполнения." : "Конспекты, мысли и контекст — без галочки «готово».",
       kind: "notes"
     };
   }
@@ -1863,7 +1866,6 @@ function simpleViewMeta() {
   return {
     today: { title: "Сегодня", subtitle: "Задачи, которые реально в работе сегодня.", kind: "tasks", status: "today" },
     week: { title: "Следующие 7 дней", subtitle: "Пул недели без календарного шума.", kind: "tasks", status: "this_week" },
-    inbox: { title: "Inbox", subtitle: "Задачи, которые ещё не разобраны.", kind: "tasks", status: "inbox" },
     board: { title: "Все задачи", subtitle: "Обычный список всех активных задач.", kind: "all_tasks" },
     done: { title: "Выполненные", subtitle: "Закрытые задачи, которые можно вернуть в работу.", kind: "done_tasks" }
   }[view] || { title: "Сегодня", subtitle: "Чистый список задач.", kind: "tasks", status: "today" };
@@ -1880,6 +1882,13 @@ function simpleCounts() {
     projects: state.projects.length,
     log: state.assistantActions.length
   };
+}
+
+function activeInboxItems() {
+  return state.inboxItems.filter((item) => {
+    const awaitingDecision = item.status === "open" || item.status === "needs_review";
+    return awaitingDecision && !item.linkedId;
+  });
 }
 
 function currentSimpleModule() {
@@ -1972,7 +1981,6 @@ function renderSimpleNav(module, counts) {
     const navItems = [
       ["today", "Сегодня", counts.today, "list-todo"],
       ["week", "Следующие 7 дней", counts.week, "calendar-days"],
-      ["inbox", "Inbox", counts.inbox, "notebook-pen"],
       ["board", "Все задачи", state.tasks.filter((item) => item.status !== "done").length, "list-todo"],
       ["done", "Выполненные", counts.done, "circle-check-big"]
     ];
@@ -2029,7 +2037,7 @@ function renderSimpleNav(module, counts) {
   }
 
   const moduleNav = {
-    capture: ["Неразобранное", state.inboxItems.filter((item) => item.status === "open" || item.status === "needs_review").length],
+    capture: ["Неразобранное", activeInboxItems().length],
     calendar: ["Расписание", state.calendarEvents.length],
     habits: ["Все привычки", counts.habits],
     focus: ["Текущая сессия", state.focusSessions.length],
@@ -2713,9 +2721,10 @@ function renderSimpleMainList(meta) {
       : `<div class="simple-empty">В этой папке пока нет заметок. Создай документ сверху.</div>`;
   }
   if (meta.kind === "inbox") {
-    return state.inboxItems.length
-      ? state.inboxItems.map(renderSimpleInboxRow).join("")
-      : `<div class="simple-empty">Inbox пуст. Сюда можно скинуть сырую мысль.</div>`;
+    const items = activeInboxItems();
+    return items.length
+      ? items.map(renderSimpleInboxRow).join("")
+      : `<div class="simple-empty"><strong>Всё разобрано</strong><span>Новая мысль появится здесь только до того, как станет задачей, заметкой или проектом.</span></div>`;
   }
   if (meta.kind === "habits") {
     return state.habits.length
@@ -3271,7 +3280,7 @@ function searchDailyOs(query) {
       results.push({ type: "project", id: item.id, title: item.title, detail: `Проект · ${stageLabel(item.journeyStage)}` });
     }
   });
-  state.inboxItems.forEach((item) => {
+  activeInboxItems().forEach((item) => {
     if (`${item.text} ${item.parsed?.title || ""}`.toLowerCase().includes(needle)) {
       results.push({ type: "inbox", id: item.id, title: item.parsed?.title || item.text, detail: "Inbox" });
     }

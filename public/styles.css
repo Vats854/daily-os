@@ -5515,6 +5515,16 @@ body[data-auth="signed-in"] .simple-app {
   text-align: center;
 }
 
+.simple-empty strong,
+.simple-empty span {
+  display: block;
+}
+
+.simple-empty strong {
+  margin-bottom: 6px;
+  color: var(--ink);
+}
+
 .muted-card p {
   margin: 0;
   color: var(--muted);
