@@ -102,6 +102,38 @@ function revisionFunctionUnavailable(error) {
   return /PGRST202|could not find.*save_daily_os_state|function .*save_daily_os_state.* does not exist|schema cache/i.test(text);
 }
 
+async function saveCloudStateWithoutRpc(supabase, userId, state, expectedRevision) {
+  const revision = Number.isFinite(Number(expectedRevision)) ? Number(expectedRevision) : 0;
+  const nextRevision = revision + 1;
+  const updatedAt = new Date().toISOString();
+
+  if (revision === 0) {
+    const inserted = await supabase
+      .from("daily_os_states")
+      .insert({ user_id: userId, state, revision: nextRevision, updated_at: updatedAt })
+      .select("revision, updated_at")
+      .maybeSingle();
+    if (!inserted.error && inserted.data) {
+      return { skipped: false, legacy: false, revision: Number(inserted.data.revision), updatedAt: inserted.data.updated_at };
+    }
+    if (!/23505|duplicate key/i.test(`${inserted.error?.code || ""} ${inserted.error?.message || ""}`)) {
+      throw inserted.error;
+    }
+    throw new Error("SYNC_CONFLICT");
+  }
+
+  const updated = await supabase
+    .from("daily_os_states")
+    .update({ state, revision: nextRevision, updated_at: updatedAt })
+    .eq("user_id", userId)
+    .eq("revision", revision)
+    .select("revision, updated_at")
+    .maybeSingle();
+  if (updated.error) throw updated.error;
+  if (!updated.data) throw new Error("SYNC_CONFLICT");
+  return { skipped: false, legacy: false, revision: Number(updated.data.revision), updatedAt: updated.data.updated_at };
+}
+
 export async function saveCloudState(state, expectedRevision = null) {
   const supabase = await getSupabaseClient();
   if (!supabase) return { skipped: true };
@@ -120,7 +152,7 @@ export async function saveCloudState(state, expectedRevision = null) {
     return { skipped: false, legacy: false, revision: Number(row?.revision || 0), updatedAt: row?.updated_at || null };
   }
   if (!revisionFunctionUnavailable(rpcResult.error)) throw rpcResult.error;
-  throw new Error("SYNC_UPGRADE_REQUIRED: save_daily_os_state RPC is unavailable");
+  return saveCloudStateWithoutRpc(supabase, userId, state, expectedRevision);
 }
 
 function contentSchemaUnavailable(error) {

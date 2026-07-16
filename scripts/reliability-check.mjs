@@ -30,7 +30,7 @@ const contracts = [
   ["rapid edits are coalesced", app.includes("cloudSync.pendingSnapshot = structuredClone(state)") && app.includes("window.setTimeout(flushCloudSave, 0)")],
   ["pending cloud edits survive reload", app.includes("PENDING_CLOUD_SAVE_KEY") && app.includes("PRE_HYDRATE_BACKUP_KEY")],
   ["unresolved conflicts block cloud writes", /if \(cloudSync\.status === "conflict"\) return;/.test(app) && app.includes("cloudSync.pendingSnapshot = null")],
-  ["unsafe legacy upsert is disabled", supabaseClient.includes("SYNC_UPGRADE_REQUIRED") && !supabaseClient.includes('.from("daily_os_states").upsert')],
+  ["cloud fallback keeps revision conflict checks", supabaseClient.includes("saveCloudStateWithoutRpc") && supabaseClient.includes('.eq("revision", revision)') && !supabaseClient.includes('.from("daily_os_states").upsert')],
   ["sync diagnostics are accessible", html.includes('id="simpleSyncToggle"') && html.includes('id="simpleSyncPanel"') && app.includes("renderSimpleSyncPanel")],
   ["sync retry uses the safe queue", app.includes('data-simple-sync-action="retry"') && app.includes("queueCloudSave({ immediate: true })")],
   ["asset versions match", assetVersions.length === 3 && assetVersions.every((version) => version === workerVersion)],
