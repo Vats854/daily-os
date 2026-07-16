@@ -13,15 +13,17 @@ import {
   createBackupPayload,
   createTaskRecord,
   duplicateTaskRecord,
+  getTodayTaskSections,
   normalizeTaskRecord,
   parseBackupPayload,
   parseStateSnapshot,
   restoreTaskRecord,
+  scheduleTaskRecord,
   setTaskPlanBucket,
   setTaskWorkflowStatus,
   serializeStateSnapshot,
   updateTaskRecord
-} from "./task-state.js?v=147";
+} from "./task-state.js?v=148";
 
 const STORAGE_KEY = "second-brain-command-center:v1";
 const CONFLICT_BACKUP_KEY = "second-brain-command-center:conflict-backup";
@@ -2775,6 +2777,18 @@ function renderSimpleMainList(meta) {
   }
   if (meta.kind === "kanban") return renderTaskKanban();
 
+  if (meta.kind === "tasks" && meta.status === "today") {
+    const sections = getTodayTaskSections(state.tasks, { today: todayIso });
+    const sectionMarkup = [
+      ["overdue", "Просрочено", sections.overdue],
+      ["timed", "По времени", sections.timed],
+      ["remaining", "Остальное на сегодня", sections.remaining]
+    ].filter(([, , items]) => items.length)
+      .map(([kind, title, items]) => `<section class="simple-task-section ${kind}" aria-label="${escapeHtml(title)}"><header><span>${escapeHtml(title)}</span><strong>${items.length}</strong></header>${items.map(renderSimpleTaskRow).join("")}</section>`)
+      .join("");
+    return sectionMarkup || `<div class="simple-empty"><strong>Сегодня свободно</strong><span>Назначь задачу на сегодня или поставь ей сегодняшнюю дату.</span></div>`;
+  }
+
   let tasks = state.tasks.filter((item) => item.workflowStatus !== "done");
   if (meta.kind === "tasks") tasks = state.tasks.filter((item) => item.planBucket === meta.status && item.workflowStatus !== "done");
   if (meta.kind === "done_tasks") tasks = state.tasks.filter((item) => item.workflowStatus === "done");
@@ -2786,14 +2800,66 @@ function renderSimpleMainList(meta) {
 }
 
 function renderSimpleTaskRow(item) {
+  const dueLabel = taskListDueLabel(item);
   return `<article class="simple-row ${state.ui?.selectedTaskId === item.id ? "active" : ""}" data-task-id="${escapeHtml(item.id)}" data-simple-object="task">
     <button type="button" class="task-toggle ${item.workflowStatus === "done" ? "done" : ""}" data-action="toggle" title="Готово"></button>
     <div>
       <span>${item.pinned ? `<span class="simple-pin-mark" title="Закреплено">●</span>` : ""}${escapeHtml(item.title)}</span>
-      <small><span class="simple-priority-flag ${escapeHtml(item.priority)}" aria-hidden="true">⚑</span>${escapeHtml(statusLabel(item.planBucket))} · ${escapeHtml(workflowLabel(item.workflowStatus))} · ${escapeHtml(listLabel(item.area))}${(item.tags || []).length ? ` · ${(item.tags || []).slice(0, 2).map((tag) => `#${escapeHtml(tag)}`).join(" ")}` : ""}</small>
+      <small><span class="simple-priority-flag ${escapeHtml(item.priority)}" aria-hidden="true">⚑</span>${dueLabel ? `<span class="simple-task-due ${item.dueDate && item.dueDate < todayIso ? "overdue" : ""}">${escapeHtml(dueLabel)}</span> · ` : ""}${escapeHtml(listLabel(item.area))}${item.workflowStatus === "in_progress" ? ` · ${escapeHtml(workflowLabel(item.workflowStatus))}` : ""}${(item.tags || []).length ? ` · ${(item.tags || []).slice(0, 2).map((tag) => `#${escapeHtml(tag)}`).join(" ")}` : ""}</small>
     </div>
     <button type="button" class="simple-more" data-simple-action="select-task-menu" aria-label="Параметры задачи"><img src="/icons/ellipsis.svg" alt="" /></button>
   </article>`;
+}
+
+function taskListDueLabel(item) {
+  if (!item?.dueDate) return item?.planBucket === "today" ? "Сегодня" : "";
+  if (item.dueDate < todayIso) return `Просрочено · ${formatShortDate(item.dueDate)}`;
+  if (item.dueDate === todayIso) return item.dueTime ? `Сегодня · ${item.dueTime}` : "Сегодня";
+  return `${formatShortDate(item.dueDate)}${item.dueTime ? ` · ${item.dueTime}` : ""}`;
+}
+
+function linkedCalendarBlockForTask(taskId) {
+  return state.dailyPlan.timeBlocks.find((block) => block.taskId === taskId) || null;
+}
+
+function defaultTaskCalendarSlot(taskItem) {
+  const now = new Date();
+  const date = taskItem.dueDate || todayIso;
+  let start = taskItem.dueTime || "";
+  if (!start) {
+    if (date !== todayIso) start = "09:00";
+    else {
+      const roundedMinutes = Math.ceil((now.getHours() * 60 + now.getMinutes()) / 30) * 30;
+      const safeMinutes = Math.max(8 * 60, Math.min(20 * 60, roundedMinutes));
+      start = `${String(Math.floor(safeMinutes / 60)).padStart(2, "0")}:${String(safeMinutes % 60).padStart(2, "0")}`;
+    }
+  }
+  const startMinutes = timeMinutes(start);
+  const duration = Math.max(15, Math.min(120, Number(taskItem.estimate) || 30));
+  const endMinutes = Math.min(23 * 60 + 55, startMinutes + duration);
+  const end = `${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`;
+  return { date, start, end };
+}
+
+function openOrScheduleTaskInCalendar(taskItem) {
+  const existing = linkedCalendarBlockForTask(taskItem.id);
+  setSimpleModule("calendar");
+  if (existing) {
+    state.ui.selectedCalendarBlockId = existing.id;
+    saveState();
+    return;
+  }
+  const slot = defaultTaskCalendarSlot(taskItem);
+  const block = scheduleTaskRecord(taskItem, { date: slot.date, start: slot.start, end: slot.end });
+  Object.assign(block, {
+    nextAction: taskItem.description || "",
+    recurrence: "none",
+    reminderMinutes: taskItem.reminderMinutes,
+    area: taskItem.area
+  });
+  taskItem.dueDate = slot.date;
+  taskItem.dueTime = slot.start;
+  persistCalendarBlock(block, { linkedTaskId: taskItem.id, actionTitle: "Задача поставлена в календарь" });
 }
 
 function noteTitle(item) {
@@ -2937,6 +3003,7 @@ function renderSimpleDetail(meta) {
       : "Без даты";
     const knownTags = allTaskTags();
     const focusActive = state.focus?.selectedTaskId === taskItem.id && state.focus?.running;
+    const linkedCalendarBlock = linkedCalendarBlockForTask(taskItem.id);
     return `<section class="simple-detail-card" data-task-id="${escapeHtml(taskItem.id)}">
       <div class="simple-detail-head">
         <button type="button" class="task-toggle ${taskItem.workflowStatus === "done" ? "done" : ""}" data-simple-action="toggle-selected" aria-label="${taskItem.workflowStatus === "done" ? "Вернуть задачу" : "Завершить задачу"}"></button>
@@ -2982,6 +3049,7 @@ function renderSimpleDetail(meta) {
         <label class="simple-task-menu-row"><span>Длительность</span><select data-task-field="estimate">${[15, 25, 45, 60].map((value) => `<option value="${value}" ${Number(taskItem.estimate) === value ? "selected" : ""}>${value} мин</option>`).join("")}</select></label>
         <label class="simple-task-menu-row"><span>Теги</span><input data-task-field="tags" value="${escapeHtml((taskItem.tags || []).join(", "))}" placeholder="Добавить теги" /></label>
         <div class="simple-task-command-list">
+          <button type="button" data-simple-action="schedule-task"><span>${linkedCalendarBlock ? "Открыть в календаре" : "Поставить в календарь"}</span><small>${linkedCalendarBlock ? `${linkedCalendarBlock.date}, ${linkedCalendarBlock.start}–${linkedCalendarBlock.end}` : "Создать блок и сохранить"}</small></button>
           <button type="button" data-simple-action="toggle-pin"><span>${taskItem.pinned ? "Открепить" : "Закрепить"}</span><small>${taskItem.pinned ? "Убрать из важных" : "Показывать выше"}</small></button>
           <button type="button" data-simple-action="start-focus"><span>Начать фокус</span><small>${taskItem.estimate || 25} мин</small></button>
           <button type="button" data-simple-action="duplicate-task"><span>Дублировать</span><small>Создать копию</small></button>
@@ -3865,6 +3933,14 @@ document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
     state.ui.taskMenuPosition = null;
     state.assistantActions.unshift(action("Фокус запущен", item.title, "confirmed"));
     startFocusTimer();
+    return;
+  }
+  if (detailAction?.dataset.simpleAction === "schedule-task") {
+    const item = getSelectedTask();
+    if (!item) return;
+    state.ui.taskMenuOpen = false;
+    state.ui.taskMenuPosition = null;
+    openOrScheduleTaskInCalendar(item);
     return;
   }
   if (detailAction?.dataset.simpleAction === "pause-focus") {

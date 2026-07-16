@@ -225,6 +225,29 @@ export function scheduleTaskRecord(item, {
   };
 }
 
+export function getTodayTaskSections(tasks, { today, priorityOrder = ["high", "medium", "low"] } = {}) {
+  if (!today) throw new TypeError("Today date is required");
+  const priorityRank = new Map(priorityOrder.map((value, index) => [value, index]));
+  const relevant = (Array.isArray(tasks) ? tasks : []).filter((item) => {
+    normalizeTaskRecord(item);
+    return item.workflowStatus !== "done" && (item.planBucket === "today" || (item.dueDate && item.dueDate <= today));
+  });
+  const compare = (a, b) => {
+    const pinned = Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
+    if (pinned) return pinned;
+    const time = String(a.dueTime || "99:99").localeCompare(String(b.dueTime || "99:99"));
+    if (time) return time;
+    const priority = (priorityRank.get(a.priority) ?? priorityOrder.length) - (priorityRank.get(b.priority) ?? priorityOrder.length);
+    if (priority) return priority;
+    return String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""));
+  };
+  const overdue = relevant.filter((item) => item.dueDate && item.dueDate < today).sort(compare);
+  const timed = relevant.filter((item) => item.dueDate === today && item.dueTime).sort(compare);
+  const assigned = new Set([...overdue, ...timed].map((item) => item.id));
+  const remaining = relevant.filter((item) => !assigned.has(item.id)).sort(compare);
+  return { overdue, timed, remaining };
+}
+
 export function completeTaskRecord(item, { now = new Date().toISOString() } = {}) {
   if (!item) return null;
   normalizeTaskRecord(item);

@@ -40,6 +40,8 @@ const contracts = [
   ["Inbox requires an explicit outcome before object creation", ["task-today", "task-backlog", "note"].every((outcome) => app.includes(`data-inbox-action="${outcome}"`)) && app.includes('status: parsed.needsReview ? "needs_review" : "open"') && !app.includes("Предложение ассистента") && !styles.includes(".simple-inbox-alternatives")],
   ["task summary properties are independent controls", app.includes('data-simple-action="quick-tags"') && styles.includes(".simple-task-summary button:hover")],
   ["task duplication uses the tested state contract", app.includes("duplicateTaskRecord(item)") && app.includes("restoreTaskRecord(item)")],
+  ["Today uses deterministic due-date sections", app.includes("getTodayTaskSections(state.tasks") && app.includes("Остальное на сегодня")],
+  ["tasks can open or create a linked calendar block", app.includes('data-simple-action="schedule-task"') && app.includes("linkedCalendarBlockForTask")],
   ["backup input exists", html.includes('id="simpleBackupInput"') && html.includes('accept="application/json,.json"')],
   ["backup actions are wired", app.includes("createBackupPayload") && app.includes("parseBackupPayload") && app.includes('data-simple-backup-action="confirm"')],
   ["auth is non-blocking", !styles.includes('body[data-auth="signed-out"] .auth-gate') && styles.includes('body[data-auth="signed-out"] .simple-app')],

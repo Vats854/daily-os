@@ -8,6 +8,7 @@ import {
   createFocusSessionRecord,
   createInboxRecord,
   createTaskRecord,
+  getTodayTaskSections,
   parseStateSnapshot,
   parseBackupPayload,
   normalizeTaskRecord,
@@ -93,6 +94,23 @@ test("task reminder is normalized and cleared with its schedule", () => {
   const legacy = normalizeTaskRecord({ id: "legacy-reminder", title: "Старая задача" });
   assert.equal(legacy.dueTime, "");
   assert.equal(legacy.reminderMinutes, null);
+});
+
+test("Today contains overdue, timed and remaining tasks exactly once", () => {
+  const overdue = createTaskRecord({ id: "overdue", title: "Просрочено", status: "backlog", priority: "high" });
+  overdue.dueDate = "2026-07-15";
+  const timed = createTaskRecord({ id: "timed", title: "По времени", status: "today", priority: "medium" });
+  timed.dueDate = "2026-07-16";
+  timed.dueTime = "11:30";
+  const remaining = createTaskRecord({ id: "remaining", title: "Остальное", status: "today", priority: "low" });
+  const future = createTaskRecord({ id: "future", title: "Позже", status: "this_week", priority: "high" });
+  future.dueDate = "2026-07-17";
+
+  const sections = getTodayTaskSections([remaining, future, timed, overdue], { today: "2026-07-16" });
+  assert.deepEqual(sections.overdue.map((item) => item.id), ["overdue"]);
+  assert.deepEqual(sections.timed.map((item) => item.id), ["timed"]);
+  assert.deepEqual(sections.remaining.map((item) => item.id), ["remaining"]);
+  assert.equal([...sections.overdue, ...sections.timed, ...sections.remaining].length, 3);
 });
 
 test("invalid persisted snapshots are rejected", () => {
