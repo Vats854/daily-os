@@ -853,6 +853,115 @@ async function handleDailyInboxRoute(request, response) {
   }
 }
 
+const journeyStageKeys = ["call", "commitment", "preparation", "trial", "crisis", "result", "integration"];
+
+function normalizeJourneyReviewResult(value, currentStage) {
+  const parsed = value && typeof value === "object" ? value : {};
+  const proposedStage = journeyStageKeys.includes(parsed.proposedStage) && parsed.proposedStage !== currentStage
+    ? parsed.proposedStage
+    : null;
+  return {
+    diagnosis: compactPhrase(parsed.diagnosis, "Проекту нужна ручная проверка текущего состояния.").slice(0, 320),
+    challenge: compactPhrase(parsed.challenge, "Какой результат подтвердит, что проект действительно движется?").slice(0, 320),
+    recommendation: compactPhrase(parsed.recommendation, "Выбери один проверяемый следующий шаг.").slice(0, 320),
+    evidence: (Array.isArray(parsed.evidence) ? parsed.evidence : [])
+      .map((item) => compactPhrase(item).slice(0, 180))
+      .filter(Boolean)
+      .slice(0, 4),
+    proposedStage,
+    reason: compactPhrase(parsed.reason, "Недостаточно оснований для автоматического перехода.").slice(0, 280),
+    confidence: ["low", "medium", "high"].includes(parsed.confidence) ? parsed.confidence : "medium",
+    provider: "gemini"
+  };
+}
+
+function journeyReviewPrompt(context = {}) {
+  const safeContext = {
+    project: {
+      title: compactPhrase(context.project?.title).slice(0, 120),
+      area: compactPhrase(context.project?.area).slice(0, 40),
+      journeyStage: journeyStageKeys.includes(context.project?.journeyStage) ? context.project.journeyStage : "call",
+      stageReason: clampText(context.project?.stageReason).slice(0, 300),
+      nextTransition: clampText(context.project?.nextTransition).slice(0, 300),
+      status: compactPhrase(context.project?.status).slice(0, 40)
+    },
+    tasks: (Array.isArray(context.tasks) ? context.tasks : []).slice(0, 20).map((item) => ({
+      title: compactPhrase(item.title).slice(0, 120),
+      status: compactPhrase(item.status).slice(0, 40),
+      priority: compactPhrase(item.priority).slice(0, 20),
+      dueDate: compactPhrase(item.dueDate).slice(0, 20)
+    })),
+    obstacles: (Array.isArray(context.obstacles) ? context.obstacles : []).slice(0, 10).map((item) => ({
+      type: compactPhrase(item.type).slice(0, 50),
+      text: compactPhrase(item.text).slice(0, 180),
+      severity: compactPhrase(item.severity).slice(0, 20)
+    })),
+    day: {
+      energy: compactPhrase(context.day?.energy).slice(0, 30),
+      todayTaskCount: Number.isFinite(context.day?.todayTaskCount) ? context.day.todayTaskCount : 0
+    }
+  };
+
+  return `Ты строгий, спокойный наставник проекта в личной Daily OS. Твоя задача — диагностировать движение, оспорить самообман и предложить один практичный следующий шаг.
+
+Стадии: call, commitment, preparation, trial, crisis, result, integration.
+Не предлагай новую стадию ради мотивации. Переход допустим только если задачи, завершения или препятствия дают наблюдаемое основание. Не придумывай факты, деньги, сроки или психологические диагнозы. Пиши на русском, конкретно, без героического пафоса.
+
+Контекст:
+${JSON.stringify(safeContext, null, 2)}
+
+Верни один JSON-объект:
+- diagnosis: что реально происходит;
+- challenge: неудобный, но полезный вопрос или возражение;
+- recommendation: одно следующее действие;
+- evidence: до 4 коротких фактов только из контекста;
+- proposedStage: следующая подходящая стадия или null;
+- reason: почему переход обоснован или не нужен;
+- confidence: low, medium или high.
+
+Верни только валидный JSON без markdown.`;
+}
+
+async function callGeminiJourneyReview(context = {}) {
+  if (!process.env.GEMINI_API_KEY) return null;
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: journeyReviewPrompt(context) }] }],
+      generationConfig: { temperature: 0.15, responseMimeType: "application/json" }
+    })
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`Gemini API error: ${response.status} ${message.slice(0, 240)}`);
+  }
+  const parsed = parseJsonModelOutput(extractGeminiText(await response.json()));
+  return normalizeJourneyReviewResult(parsed, context.project?.journeyStage);
+}
+
+async function handleJourneyReviewRoute(request, response) {
+  const body = await readJson(request);
+  if (!body.context?.project?.title) {
+    sendJson(response, 400, { ok: false, error: "Missing project context" });
+    return;
+  }
+  if (aiProvider !== "gemini") {
+    sendJson(response, 400, { ok: false, error: `Unsupported AI_PROVIDER for Daily OS: ${aiProvider}` });
+    return;
+  }
+  try {
+    const review = await callGeminiJourneyReview(body.context);
+    if (!review) {
+      sendJson(response, 503, { ok: false, error: "Gemini API key is not configured" });
+      return;
+    }
+    sendJson(response, 200, { ok: true, review, provider: "gemini", model: geminiModel });
+  } catch (error) {
+    sendJson(response, 502, { ok: false, error: friendlyProviderError(error instanceof Error ? error.message : "Gemini API error") });
+  }
+}
+
 async function callOpenAiCareer(kind, cvText, jobText, backgroundText = "") {
   if (!process.env.OPENAI_API_KEY) return null;
   const schema = schemaForCareerKind(kind);
@@ -1004,6 +1113,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/ai/inbox") {
       await handleDailyInboxRoute(request, response);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/ai/journey-review") {
+      await handleJourneyReviewRoute(request, response);
       return;
     }
 

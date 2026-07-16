@@ -1342,6 +1342,106 @@ function reviewProjectJourney(projectItem) {
   }
 }
 
+function projectJourneyReviewContext(projectItem) {
+  const projectTasks = state.tasks.filter((item) => item.projectId === projectItem.id);
+  return {
+    project: {
+      title: projectItem.title,
+      area: projectItem.area,
+      journeyStage: projectItem.journeyStage,
+      stageReason: projectItem.stageReason || "",
+      nextTransition: projectItem.nextTransition || nextTransitionFor(projectItem.journeyStage),
+      status: projectItem.status
+    },
+    tasks: projectTasks.slice(0, 20).map((item) => ({
+      title: item.title,
+      status: item.workflowStatus,
+      priority: item.priority,
+      dueDate: item.dueDate || ""
+    })),
+    obstacles: state.projectObstacles
+      .filter((item) => item.projectId === projectItem.id && item.status === "open")
+      .slice(0, 10)
+      .map(({ type, text, severity }) => ({ type, text, severity })),
+    day: {
+      energy: state.dailyPlan.energy || state.dailyPlan.status || "medium",
+      todayTaskCount: state.tasks.filter((item) => item.planBucket === "today" && item.workflowStatus !== "done").length
+    }
+  };
+}
+
+function localProjectMentorReview(projectItem) {
+  const tasks = state.tasks.filter((item) => item.projectId === projectItem.id);
+  const open = tasks.filter((item) => item.workflowStatus !== "done");
+  const done = tasks.filter((item) => item.workflowStatus === "done");
+  const obstacles = state.projectObstacles.filter((item) => item.projectId === projectItem.id && item.status === "open");
+  let proposedStage = null;
+  let diagnosis = open.length
+    ? `В проекте ${open.length} открытых задач и ${done.length} завершённых.`
+    : "У проекта нет открытых действий, поэтому движение сейчас не проверяется.";
+  let challenge = open.length > 3 ? "Какая одна задача действительно двигает результат, а какие создают ощущение занятости?" : "Какой наблюдаемый результат должен появиться следующим?";
+  let recommendation = obstacles.length ? `Сначала снять препятствие: ${obstacles[0].text}` : (open[0] ? `Закрыть следующий шаг: ${open[0].title}` : "Добавить один конкретный следующий шаг.");
+  let reason = "Текущую стадию пока лучше сохранить.";
+  if (obstacles.length || (open.length > 2 && done.length === 0)) {
+    proposedStage = "crisis";
+    diagnosis = obstacles.length ? "Проект упёрся в открытое препятствие." : "Проект выглядит занятым, но завершённого прогресса пока нет.";
+    reason = obstacles.length ? "Открытое препятствие требует явного разбора узкого места." : "Несколько открытых задач без завершений — сигнал застревания.";
+  } else if (["commitment", "preparation"].includes(projectItem.journeyStage) && open.length >= 2) {
+    proposedStage = "trial";
+    reason = "Конкретные действия уже начались; проект вышел из подготовки в практическую работу.";
+  } else if (["trial", "crisis"].includes(projectItem.journeyStage) && done.length >= 2 && open.length <= 1) {
+    proposedStage = "result";
+    reason = "Есть завершённые действия и мало открытых хвостов; можно фиксировать результат этапа.";
+  }
+  if (proposedStage === projectItem.journeyStage) proposedStage = null;
+  return {
+    diagnosis,
+    challenge,
+    recommendation,
+    evidence: [`Открыто задач: ${open.length}`, `Завершено задач: ${done.length}`, `Открыто препятствий: ${obstacles.length}`],
+    proposedStage,
+    reason,
+    confidence: obstacles.length || tasks.length >= 2 ? "medium" : "low",
+    provider: "local"
+  };
+}
+
+async function requestProjectMentorReview(projectItem) {
+  if (!projectItem || state.ui.projectReviewPendingId) return;
+  state.ui.projectReviewPendingId = projectItem.id;
+  render();
+  let review;
+  let fallbackReason = "";
+  try {
+    const response = await fetch("/api/ai/journey-review", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ context: projectJourneyReviewContext(projectItem) })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.review) throw new Error(payload.error || "Наставник временно недоступен");
+    review = payload.review;
+  } catch (error) {
+    fallbackReason = error instanceof Error ? error.message : "AI недоступен";
+    review = localProjectMentorReview(projectItem);
+  }
+
+  const reviewedAt = new Date().toISOString();
+  projectItem.mentorReview = { ...review, reviewedAt, fallbackReason };
+  projectItem.lastStageReviewAt = reviewedAt;
+  projectItem.updatedAt = reviewedAt;
+  if (review.proposedStage && review.proposedStage !== projectItem.journeyStage && projectItem.proposedStage !== review.proposedStage) {
+    proposeProjectStage(projectItem, review.proposedStage, review.reason, review.provider === "gemini" ? "assistant" : "local");
+  }
+  state.assistantActions.unshift(action(
+    "Наставник проверил проект",
+    `${projectItem.title}: ${review.diagnosis}${fallbackReason ? " Локальная проверка использована вместо AI." : ""}`,
+    review.proposedStage ? "needs_review" : "confirmed"
+  ));
+  state.ui.projectReviewPendingId = "";
+  saveState();
+}
+
 function confirmProjectStage(projectItem) {
   if (!projectItem?.proposedStage) return false;
   const fromStage = projectItem.journeyStage;
@@ -2677,6 +2777,8 @@ function renderSimpleProjectsWorkspace() {
   const obstacles = state.projectObstacles.filter((item) => item.projectId === selected.id && item.status === "open");
   const recentEvents = state.projectStageEvents.filter((item) => item.projectId === selected.id).slice(0, 4);
   const availableTasks = state.tasks.filter((item) => !item.projectId && item.workflowStatus !== "done").slice(0, 30);
+  const mentorReview = selected.mentorReview;
+  const mentorPending = state.ui.projectReviewPendingId === selected.id;
   return `<section class="simple-project-workspace" data-project-id="${escapeHtml(selected.id)}">
     <nav class="simple-project-index" aria-label="Активные проекты">
       ${projects.map((item) => {
@@ -2687,11 +2789,16 @@ function renderSimpleProjectsWorkspace() {
     <article class="simple-project-canvas">
       <header class="simple-project-hero">
         <div><span class="label">Проект · ${escapeHtml(listLabel(selected.area))}</span><input class="simple-project-title-input" data-project-field="title" value="${escapeHtml(selected.title)}" aria-label="Название проекта" /><p>${escapeHtml(stageLabel(selected.journeyStage))} · ${openTasks.length} открытых задач</p></div>
-        <button type="button" data-simple-project-action="review">Проверить стадию</button>
+        <button type="button" data-simple-project-action="review" ${mentorPending ? "disabled" : ""}>${mentorPending ? "Наставник думает…" : "Спросить наставника"}</button>
       </header>
       <div class="simple-journey-track" aria-label="Путь проекта">
         ${journeyStages.map(([, label], index) => `<div class="${index < stagePosition ? "done" : ""} ${index === stagePosition ? "current" : ""}"><i>${index + 1}</i><span>${escapeHtml(label)}</span></div>`).join("")}
       </div>
+      ${mentorReview ? `<section class="simple-project-mentor" aria-label="Последний разбор наставника">
+        <header><span class="label">Наставник</span><small>${mentorReview.provider === "gemini" ? "AI-разбор" : "Локальная проверка"} · ${escapeHtml(new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(mentorReview.reviewedAt)))}</small></header>
+        <div class="simple-project-mentor-body"><div><strong>Диагноз</strong><p>${escapeHtml(mentorReview.diagnosis)}</p></div><blockquote><strong>Возражение</strong><p>${escapeHtml(mentorReview.challenge)}</p></blockquote><div><strong>Следующий ход</strong><p>${escapeHtml(mentorReview.recommendation)}</p></div></div>
+        ${(mentorReview.evidence || []).length ? `<footer>${mentorReview.evidence.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</footer>` : ""}
+      </section>` : `<section class="simple-project-mentor empty"><div><span class="label">Наставник</span><p>Проверит задачи и препятствия проекта, оспорит слабое решение и предложит один следующий ход.</p></div><button type="button" data-simple-project-action="review" ${mentorPending ? "disabled" : ""}>${mentorPending ? "Проверяю…" : "Проверить проект"}</button></section>`}
       <div class="simple-project-grid">
         <section><span class="label">Критерий перехода</span><textarea data-project-field="nextTransition" placeholder="Что должно стать правдой, чтобы перейти дальше">${escapeHtml(selected.nextTransition || nextTransitionFor(selected.journeyStage))}</textarea><label><span>Почему проект на этой стадии</span><input data-project-field="stageReason" value="${escapeHtml(selected.stageReason || "")}" placeholder="Короткая диагностическая причина" /></label>${selected.proposedStage ? `<div class="simple-project-proposal"><p>Предложен переход в «${escapeHtml(stageLabel(selected.proposedStage))}»</p><div><button type="button" data-simple-project-action="reject">Отклонить</button><button type="button" class="primary" data-simple-project-action="confirm">Подтвердить</button></div></div>` : `<form class="simple-project-stage-form" data-simple-project-form="propose-stage"><select name="stage" aria-label="Следующая стадия">${journeyStages.filter(([stage]) => stage !== selected.journeyStage).map(([stage, label]) => `<option value="${stage}">${escapeHtml(label)}</option>`).join("")}</select><input name="reason" placeholder="Почему пора перейти" /><button type="submit">Предложить</button></form>`}</section>
         <section class="simple-project-obstacles"><span class="label">Препятствия</span>${obstacles.length ? obstacles.map((item) => `<article><span class="severity ${escapeHtml(item.severity)}">${escapeHtml({ low: "низкое", medium: "среднее", high: "высокое" }[item.severity] || item.severity)}</span><p><strong>${escapeHtml(item.type)}</strong>${escapeHtml(item.text)}</p><button type="button" data-simple-project-action="close-obstacle" data-obstacle-id="${escapeHtml(item.id)}" aria-label="Закрыть препятствие">×</button></article>`).join("") : `<p class="simple-project-muted">Открытых препятствий нет.</p>`}<form data-simple-project-form="add-obstacle"><input name="text" placeholder="Новое препятствие" required /><select name="severity" aria-label="Серьёзность"><option value="low">Низкая</option><option value="medium" selected>Средняя</option><option value="high">Высокая</option></select><button type="submit">Добавить</button></form></section>
@@ -3415,7 +3522,7 @@ document.querySelectorAll(".nav-button").forEach((button) => {
   });
 });
 
-document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
+document.querySelector("#simpleApp")?.addEventListener("click", async (event) => {
   if (event.target.closest("[data-simple-undo]")) {
     restoreUndo();
     return;
@@ -3620,7 +3727,10 @@ document.querySelector("#simpleApp")?.addEventListener("click", (event) => {
   if (projectAction) {
     const projectItem = state.projects.find((item) => item.id === state.selectedProjectId) || state.projects[0];
     if (!projectItem) return;
-    if (projectAction.dataset.simpleProjectAction === "review") reviewProjectJourney(projectItem);
+    if (projectAction.dataset.simpleProjectAction === "review") {
+      await requestProjectMentorReview(projectItem);
+      return;
+    }
     if (projectAction.dataset.simpleProjectAction === "confirm") confirmProjectStage(projectItem);
     if (projectAction.dataset.simpleProjectAction === "reject") rejectProjectStage(projectItem);
     if (projectAction.dataset.simpleProjectAction === "close-obstacle") {
