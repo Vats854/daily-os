@@ -333,6 +333,8 @@ state.ui.pendingDeleteTaskId = state.ui.pendingDeleteTaskId || "";
 state.ui.pendingDeleteNoteId = state.ui.pendingDeleteNoteId || "";
 state.ui.taskMenuOpen = false;
 state.ui.taskMenuPosition = null;
+state.ui.taskDecompositionDraft = null;
+state.ui.taskDecompositionPendingId = "";
 state.ui.noteMenuOpen = false;
 state.ui.quickTagsOpen = false;
 state.ui.appearanceOpen = false;
@@ -571,7 +573,8 @@ function normalizeState(nextState) {
       ? item.subtasks.map((subtask) => ({
           id: String(subtask.id || crypto.randomUUID()),
           title: String(subtask.title || "Подзадача"),
-          done: Boolean(subtask.done)
+          done: Boolean(subtask.done),
+          estimateMinutes: Number.isFinite(Number(subtask.estimateMinutes)) ? Number(subtask.estimateMinutes) : null
         }))
       : [];
   });
@@ -1440,6 +1443,98 @@ async function requestProjectMentorReview(projectItem) {
   ));
   state.ui.projectReviewPendingId = "";
   saveState();
+}
+
+function taskDecompositionContext(taskItem) {
+  const projectItem = state.projects.find((item) => item.id === taskItem.projectId);
+  return {
+    task: {
+      title: taskItem.title,
+      description: taskItem.description || "",
+      estimateMinutes: Number(taskItem.estimate) || 30,
+      dueDate: taskItem.dueDate || "",
+      list: listLabel(taskItem.area),
+      project: projectItem?.title || "",
+      existingSubtasks: (taskItem.subtasks || []).slice(0, 12).map((item) => item.title)
+    }
+  };
+}
+
+function localTaskDecomposition(taskItem) {
+  const title = String(taskItem.title || "").trim();
+  const description = String(taskItem.description || "").trim();
+  const words = title.split(/\s+/).filter(Boolean);
+  const atomic = words.length <= 4 && !description && Number(taskItem.estimate || 30) <= 30 && !(taskItem.subtasks || []).length;
+  if (atomic) {
+    return {
+      needed: false,
+      reason: "Задача уже выглядит как один конкретный шаг. Декомпозиция добавит лишнюю рутину.",
+      steps: [],
+      provider: "local"
+    };
+  }
+  const lower = `${title} ${description}`.toLowerCase();
+  const steps = /резюме|cv/.test(lower)
+    ? [
+        ["Выбрать 2–3 целевых вакансии", 20],
+        ["Собрать релевантные результаты и цифры", 30],
+        ["Подготовить первый черновик резюме", 45],
+        ["Проверить формулировки и структуру", 25],
+        ["Сохранить финальную версию", 15]
+      ]
+    : [
+        ["Уточнить ожидаемый результат", 15],
+        ["Собрать нужные материалы и ограничения", 20],
+        [`Подготовить первый вариант: ${title}`, Math.min(60, Math.max(25, Number(taskItem.estimate) || 30))],
+        ["Проверить результат по критериям", 20],
+        ["Зафиксировать итог и следующий шаг", 15]
+      ];
+  return {
+    needed: true,
+    reason: "Проверь предложенные шаги и оставь только полезные.",
+    steps: steps.map(([stepTitle, estimateMinutes]) => ({ title: stepTitle, estimateMinutes })),
+    provider: "local"
+  };
+}
+
+function normalizeDecompositionDraft(taskItem, result, fallbackReason = "") {
+  return {
+    taskId: taskItem.id,
+    needed: result.needed !== false,
+    reason: String(result.reason || "Проверь предложенные шаги перед добавлением."),
+    provider: result.provider || "gemini",
+    fallbackReason,
+    steps: (Array.isArray(result.steps) ? result.steps : []).slice(0, 7).map((item) => ({
+      id: crypto.randomUUID(),
+      title: String(item.title || "").trim(),
+      estimateMinutes: Math.max(5, Math.min(120, Number(item.estimateMinutes) || 25))
+    })).filter((item) => item.title)
+  };
+}
+
+async function requestTaskDecomposition(taskItem) {
+  if (!taskItem || state.ui.taskDecompositionPendingId) return;
+  state.ui.taskDecompositionPendingId = taskItem.id;
+  state.ui.taskDecompositionDraft = null;
+  render();
+  let result;
+  let fallbackReason = "";
+  try {
+    const response = await fetch("/api/ai/task-decompose", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(taskDecompositionContext(taskItem))
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.result) throw new Error(payload.error || "AI-декомпозиция временно недоступна");
+    result = payload.result;
+  } catch (error) {
+    fallbackReason = error instanceof Error ? error.message : "AI недоступен";
+    result = localTaskDecomposition(taskItem);
+  }
+  state.ui.taskDecompositionPendingId = "";
+  state.ui.taskDecompositionDraft = normalizeDecompositionDraft(taskItem, result, fallbackReason);
+  render();
 }
 
 function confirmProjectStage(projectItem) {
@@ -3111,6 +3206,8 @@ function renderSimpleDetail(meta) {
     const knownTags = allTaskTags();
     const focusActive = state.focus?.selectedTaskId === taskItem.id && state.focus?.running;
     const linkedCalendarBlock = linkedCalendarBlockForTask(taskItem.id);
+    const decompositionPending = state.ui.taskDecompositionPendingId === taskItem.id;
+    const decompositionDraft = state.ui.taskDecompositionDraft?.taskId === taskItem.id ? state.ui.taskDecompositionDraft : null;
     return `<section class="simple-detail-card" data-task-id="${escapeHtml(taskItem.id)}">
       <div class="simple-detail-head">
         <button type="button" class="task-toggle ${taskItem.workflowStatus === "done" ? "done" : ""}" data-simple-action="toggle-selected" aria-label="${taskItem.workflowStatus === "done" ? "Вернуть задачу" : "Завершить задачу"}"></button>
@@ -3132,6 +3229,13 @@ function renderSimpleDetail(meta) {
       ${state.ui.quickTagsOpen ? `<section class="simple-quick-tags" aria-label="Быстрый выбор тегов">
         <div>${knownTags.map((tag) => `<button type="button" class="option-chip ${(taskItem.tags || []).includes(tag) ? "active" : ""}" data-task-tag="${escapeHtml(tag)}">#${escapeHtml(tag)}</button>`).join("") || `<small>Тегов пока нет — добавь первый ниже.</small>`}</div>
         <label><span>Новый тег</span><input data-task-field="tags" value="${escapeHtml((taskItem.tags || []).join(", "))}" placeholder="например: зал, здоровье" /></label>
+      </section>` : ""}
+      ${decompositionPending ? `<section class="simple-decomposition-draft loading" aria-live="polite"><span class="label">AI-декомпозиция</span><strong>Собираю конкретные шаги…</strong><p>Задача пока не меняется.</p></section>` : decompositionDraft ? `<section class="simple-decomposition-draft" aria-label="Черновик подзадач">
+        <header><div><span class="label">Черновик AI</span><strong>${decompositionDraft.needed ? "Разбить на шаги" : "Декомпозиция не нужна"}</strong></div><button type="button" data-simple-action="cancel-decomposition" aria-label="Закрыть черновик">×</button></header>
+        <p>${escapeHtml(decompositionDraft.reason)}${decompositionDraft.fallbackReason ? " Локальная схема использована вместо AI." : ""}</p>
+        ${decompositionDraft.needed ? `<div class="simple-decomposition-list">${decompositionDraft.steps.map((step) => `<div data-decomposition-step-id="${escapeHtml(step.id)}"><span aria-hidden="true">${decompositionDraft.steps.indexOf(step) + 1}</span><input data-decomposition-field="title" value="${escapeHtml(step.title)}" aria-label="Название шага" /><select data-decomposition-field="estimateMinutes" aria-label="Оценка шага">${[10, 15, 20, 25, 30, 45, 60].map((minutes) => `<option value="${minutes}" ${step.estimateMinutes === minutes ? "selected" : ""}>${minutes} мин</option>`).join("")}</select><button type="button" data-simple-action="remove-decomposition-step" aria-label="Убрать шаг">×</button></div>`).join("")}</div>
+        <button type="button" class="simple-decomposition-add" data-simple-action="add-decomposition-step">+ Добавить шаг</button>
+        <footer><button type="button" data-simple-action="cancel-decomposition">Отмена</button><button type="button" class="primary" data-simple-action="apply-decomposition" ${decompositionDraft.steps.some((step) => step.title.trim()) ? "" : "disabled"}>Добавить подзадачи</button></footer>` : `<footer><button type="button" class="primary" data-simple-action="cancel-decomposition">Понятно</button></footer>`}
       </section>` : ""}
       <section class="simple-subtasks" aria-label="Подзадачи">
         <div class="simple-subtasks-head"><strong>Подзадачи</strong><span>${taskItem.subtasks.filter((item) => item.done).length}/${taskItem.subtasks.length}</span></div>
@@ -3157,6 +3261,7 @@ function renderSimpleDetail(meta) {
         <label class="simple-task-menu-row"><span>Теги</span><input data-task-field="tags" value="${escapeHtml((taskItem.tags || []).join(", "))}" placeholder="Добавить теги" /></label>
         <div class="simple-task-command-list">
           <button type="button" data-simple-action="schedule-task"><span>${linkedCalendarBlock ? "Открыть в календаре" : "Поставить в календарь"}</span><small>${linkedCalendarBlock ? `${linkedCalendarBlock.date}, ${linkedCalendarBlock.start}–${linkedCalendarBlock.end}` : "Создать блок и сохранить"}</small></button>
+          <button type="button" data-simple-action="decompose-task"><span>Разбить на шаги</span><small>AI-черновик подзадач</small></button>
           <button type="button" data-simple-action="toggle-pin"><span>${taskItem.pinned ? "Открепить" : "Закрепить"}</span><small>${taskItem.pinned ? "Убрать из важных" : "Показывать выше"}</small></button>
           <button type="button" data-simple-action="start-focus"><span>Начать фокус</span><small>${taskItem.estimate || 25} мин</small></button>
           <button type="button" data-simple-action="duplicate-task"><span>Дублировать</span><small>Создать копию</small></button>
@@ -3980,6 +4085,8 @@ document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>
     state.ui.taskMenuOpen = false;
     state.ui.taskMenuPosition = null;
     state.ui.quickTagsOpen = false;
+    state.ui.taskDecompositionDraft = null;
+    state.ui.taskDecompositionPendingId = "";
     saveState();
     return;
   }
@@ -3989,6 +4096,54 @@ document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>
     stageUndo(item.workflowStatus === "done" ? "Задача возвращена" : "Задача завершена");
     if (item.workflowStatus === "done") restoreTaskRecord(item);
     else completeTaskRecord(item);
+    saveState();
+    return;
+  }
+  if (detailAction?.dataset.simpleAction === "decompose-task") {
+    const item = getSelectedTask();
+    if (!item) return;
+    state.ui.taskMenuOpen = false;
+    state.ui.taskMenuPosition = null;
+    await requestTaskDecomposition(item);
+    return;
+  }
+  if (detailAction?.dataset.simpleAction === "cancel-decomposition") {
+    state.ui.taskDecompositionDraft = null;
+    state.ui.taskDecompositionPendingId = "";
+    render();
+    return;
+  }
+  if (detailAction?.dataset.simpleAction === "remove-decomposition-step") {
+    const stepId = detailAction.closest("[data-decomposition-step-id]")?.dataset.decompositionStepId;
+    const draft = state.ui.taskDecompositionDraft;
+    if (!draft || !stepId) return;
+    draft.steps = draft.steps.filter((item) => item.id !== stepId);
+    render();
+    return;
+  }
+  if (detailAction?.dataset.simpleAction === "add-decomposition-step") {
+    const draft = state.ui.taskDecompositionDraft;
+    if (!draft || draft.steps.length >= 7) return;
+    draft.steps.push({ id: crypto.randomUUID(), title: "", estimateMinutes: 25 });
+    render();
+    requestAnimationFrame(() => document.querySelector('[data-decomposition-step-id]:last-child input[data-decomposition-field="title"]')?.focus());
+    return;
+  }
+  if (detailAction?.dataset.simpleAction === "apply-decomposition") {
+    const item = getSelectedTask();
+    const draft = state.ui.taskDecompositionDraft;
+    if (!item || draft?.taskId !== item.id) return;
+    const existing = new Set((item.subtasks || []).map((subtask) => subtask.title.trim().toLocaleLowerCase("ru-RU")));
+    const additions = draft.steps
+      .map((step) => ({ title: step.title.trim(), estimateMinutes: step.estimateMinutes }))
+      .filter((step) => step.title && !existing.has(step.title.toLocaleLowerCase("ru-RU")));
+    additions.forEach((step) => {
+      existing.add(step.title.toLocaleLowerCase("ru-RU"));
+      item.subtasks.push({ id: crypto.randomUUID(), title: step.title, done: false, estimateMinutes: step.estimateMinutes });
+    });
+    item.updatedAt = new Date().toISOString();
+    state.ui.taskDecompositionDraft = null;
+    state.assistantActions.unshift(action("Задача разбита на шаги", `${item.title}: добавлено ${additions.length} ${russianPlural(additions.length, "подзадача", "подзадачи", "подзадач")}.`, "confirmed"));
     saveState();
     return;
   }
@@ -4379,6 +4534,15 @@ document.querySelector("#simpleApp")?.addEventListener("change", (event) => {
 });
 
 document.querySelector("#simpleApp")?.addEventListener("input", (event) => {
+  const decompositionField = event.target.closest("[data-decomposition-field]");
+  if (decompositionField) {
+    const stepId = decompositionField.closest("[data-decomposition-step-id]")?.dataset.decompositionStepId;
+    const step = state.ui.taskDecompositionDraft?.steps.find((item) => item.id === stepId);
+    if (!step) return;
+    if (decompositionField.dataset.decompositionField === "title") step.title = decompositionField.value;
+    if (decompositionField.dataset.decompositionField === "estimateMinutes") step.estimateMinutes = Number(decompositionField.value) || 25;
+    return;
+  }
   const focusVolume = event.target.closest('[data-focus-field="volume"]');
   if (focusVolume) {
     updateFocusVolume(focusVolume.value);

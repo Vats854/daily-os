@@ -962,6 +962,84 @@ async function handleJourneyReviewRoute(request, response) {
   }
 }
 
+function normalizeTaskDecompositionResult(value) {
+  const parsed = value && typeof value === "object" ? value : {};
+  const needed = parsed.needed !== false;
+  return {
+    needed,
+    reason: compactPhrase(parsed.reason, needed ? "Проверь шаги перед добавлением." : "Задача уже достаточно конкретна.").slice(0, 260),
+    steps: needed ? (Array.isArray(parsed.steps) ? parsed.steps : [])
+      .map((item) => ({
+        title: compactPhrase(item?.title).slice(0, 160),
+        estimateMinutes: Math.max(5, Math.min(120, Number(item?.estimateMinutes) || 25))
+      }))
+      .filter((item) => item.title)
+      .slice(0, 7) : [],
+    provider: "gemini"
+  };
+}
+
+function taskDecompositionPrompt(context = {}) {
+  const task = context.task || {};
+  const safeTask = {
+    title: compactPhrase(task.title).slice(0, 160),
+    description: clampText(task.description).slice(0, 1200),
+    estimateMinutes: Math.max(5, Math.min(480, Number(task.estimateMinutes) || 30)),
+    dueDate: compactPhrase(task.dueDate).slice(0, 20),
+    list: compactPhrase(task.list).slice(0, 80),
+    project: compactPhrase(task.project).slice(0, 120),
+    existingSubtasks: (Array.isArray(task.existingSubtasks) ? task.existingSubtasks : [])
+      .slice(0, 12)
+      .map((item) => compactPhrase(item).slice(0, 140))
+      .filter(Boolean)
+  };
+  return `Ты декомпозируешь одну задачу в личном task tracker. Сначала реши, нужна ли декомпозиция. Если задача уже является одним конкретным действием, верни needed=false: искусственные шаги вредны. Иначе предложи 3–7 исполнимых подзадач в правильном порядке. Каждый шаг начинается с глагола, даёт проверяемый результат, не повторяет существующие подзадачи и обычно занимает 10–60 минут. Не меняй срок, приоритет, список или проект. Пиши по-русски, конкретно, без вводного текста.
+
+Задача:
+${JSON.stringify(safeTask, null, 2)}
+
+Верни только JSON: {"needed": boolean, "reason": string, "steps": [{"title": string, "estimateMinutes": number}]}.`;
+}
+
+async function callGeminiTaskDecomposition(context = {}) {
+  if (!process.env.GEMINI_API_KEY) return null;
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: taskDecompositionPrompt(context) }] }],
+      generationConfig: { temperature: 0.15, responseMimeType: "application/json" }
+    })
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`Gemini API error: ${response.status} ${message.slice(0, 240)}`);
+  }
+  return normalizeTaskDecompositionResult(parseJsonModelOutput(extractGeminiText(await response.json())));
+}
+
+async function handleTaskDecompositionRoute(request, response) {
+  const context = await readJson(request);
+  if (!context.task?.title) {
+    sendJson(response, 400, { ok: false, error: "Missing task context" });
+    return;
+  }
+  if (aiProvider !== "gemini") {
+    sendJson(response, 400, { ok: false, error: `Unsupported AI_PROVIDER for Daily OS: ${aiProvider}` });
+    return;
+  }
+  try {
+    const result = await callGeminiTaskDecomposition(context);
+    if (!result) {
+      sendJson(response, 503, { ok: false, error: "Gemini API key is not configured" });
+      return;
+    }
+    sendJson(response, 200, { ok: true, result, provider: "gemini", model: geminiModel });
+  } catch (error) {
+    sendJson(response, 502, { ok: false, error: friendlyProviderError(error instanceof Error ? error.message : "Gemini API error") });
+  }
+}
+
 async function callOpenAiCareer(kind, cvText, jobText, backgroundText = "") {
   if (!process.env.OPENAI_API_KEY) return null;
   const schema = schemaForCareerKind(kind);
@@ -1118,6 +1196,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/ai/journey-review") {
       await handleJourneyReviewRoute(request, response);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/ai/task-decompose") {
+      await handleTaskDecompositionRoute(request, response);
       return;
     }
 

@@ -1819,6 +1819,133 @@ body[data-auth] .simple-app[data-module="notes"].detail-open {
   .simple-project-stage-form,.simple-project-obstacles form { grid-template-columns: minmax(0, 1fr); }
 }
 
+.simple-decomposition-draft {
+  display: grid;
+  gap: 10px;
+  margin: 2px 0 14px;
+  padding: 12px;
+  border: 1px solid #c9d9ee;
+  border-radius: 8px;
+  background: #f7faff;
+}
+
+.simple-decomposition-draft.loading {
+  min-height: 92px;
+  align-content: center;
+}
+
+.simple-decomposition-draft header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.simple-decomposition-draft header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.simple-decomposition-draft header > button,
+.simple-decomposition-list > div > button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--core-muted);
+  font-size: 20px;
+}
+
+.simple-decomposition-draft header > button:hover,
+.simple-decomposition-list > div > button:hover {
+  background: #eaf0f8;
+  color: var(--core-text);
+}
+
+.simple-decomposition-draft > p {
+  margin: 0;
+  color: var(--core-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.simple-decomposition-list {
+  display: grid;
+  gap: 6px;
+}
+
+.simple-decomposition-list > div {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 88px 28px;
+  align-items: center;
+  gap: 6px;
+}
+
+.simple-decomposition-list > div > span {
+  color: #728198;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.simple-decomposition-list input,
+.simple-decomposition-list select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid #d8e0ea;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--core-text);
+  font: inherit;
+}
+
+.simple-decomposition-list select {
+  padding: 0 7px;
+  font-size: 12px;
+}
+
+.simple-decomposition-add {
+  justify-self: start;
+  padding: 6px 8px;
+  border: 0;
+  background: transparent;
+  color: #315f9e;
+  font-weight: 700;
+}
+
+.simple-decomposition-draft footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.simple-decomposition-draft footer button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--core-line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--core-text);
+  font-weight: 700;
+}
+
+.simple-decomposition-draft footer button.primary {
+  border-color: #122035;
+  background: #122035;
+  color: #fff;
+}
+
+.simple-decomposition-draft footer button:disabled {
+  opacity: .45;
+}
+
 @media (max-width: 780px) {
   body[data-auth] .simple-app,
   body[data-auth] .simple-app.detail-open {
@@ -1951,6 +2078,14 @@ body[data-auth] .simple-app[data-module="notes"].detail-open {
     left: 0;
     width: auto;
     padding: 20px 16px;
+  }
+
+  .simple-decomposition-list > div {
+    grid-template-columns: 22px minmax(0, 1fr) 28px;
+  }
+
+  .simple-decomposition-list select {
+    grid-column: 2;
   }
 
   body[data-auth] .simple-app[data-module="notes"],
