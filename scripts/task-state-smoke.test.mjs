@@ -12,6 +12,7 @@ import {
   parseStateSnapshot,
   parseBackupPayload,
   normalizeTaskRecord,
+  reorderTaskRecords,
   resolveInboxRecord,
   restoreTaskRecord,
   scheduleTaskRecord,
@@ -172,6 +173,32 @@ test("duplicate is independent and is not pinned automatically", () => {
   assert.deepEqual(duplicate.tags, ["core"]);
   assert.equal(duplicate.subtasks[0].id, "subtask-copy");
   assert.notEqual(duplicate.subtasks[0], task.subtasks[0]);
+});
+
+test("manual task order survives serialization without changing task meaning", () => {
+  const first = createTaskRecord({ id: "order-a", title: "Первая", status: "today", area: "work", position: 0 });
+  const second = createTaskRecord({ id: "order-b", title: "Вторая", status: "today", area: "work", position: 1000 });
+  const before = structuredClone([first, second]);
+
+  reorderTaskRecords([first, second], [second.id, first.id]);
+  const restored = parseStateSnapshot(serializeStateSnapshot({ tasks: [first, second] })).tasks;
+
+  assert.equal(restored.find((item) => item.id === second.id).position, 0);
+  assert.equal(restored.find((item) => item.id === first.id).position, 1000);
+  for (const item of restored) {
+    const original = before.find((candidate) => candidate.id === item.id);
+    assert.equal(item.planBucket, original.planBucket);
+    assert.equal(item.workflowStatus, original.workflowStatus);
+    assert.equal(item.area, original.area);
+    assert.equal(item.dueDate, original.dueDate);
+  }
+});
+
+test("new tasks stay unpositioned until the app places them", () => {
+  const task = createTaskRecord({ id: "order-new", title: "Новая задача" });
+  assert.equal(task.position, null);
+  normalizeTaskRecord(task);
+  assert.equal(task.position, null);
 });
 
 test("core daily workflow survives serialization and reload", () => {

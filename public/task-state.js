@@ -6,6 +6,7 @@ export function createTaskRecord({
   area = "work",
   priority = "medium",
   estimate = 30,
+  position = null,
   projectId = null,
   id = crypto.randomUUID(),
   now = new Date().toISOString()
@@ -26,6 +27,7 @@ export function createTaskRecord({
     area,
     priority,
     estimate,
+    position: position !== null && position !== "" && Number.isFinite(Number(position)) ? Number(position) : null,
     previousStatus: normalizedPlanBucket,
     previousWorkflowStatus: normalizedWorkflowStatus === "done" ? "todo" : normalizedWorkflowStatus,
     dueDate: "",
@@ -115,8 +117,20 @@ export function normalizeTaskRecord(item) {
   item.reminderMinutes = item.reminderMinutes !== null && item.reminderMinutes !== "" && Number.isFinite(Number(item.reminderMinutes)) && Number(item.reminderMinutes) >= 0
     ? Number(item.reminderMinutes)
     : null;
+  item.position = item.position !== null && item.position !== "" && Number.isFinite(Number(item.position)) && Number(item.position) >= 0
+    ? Number(item.position)
+    : null;
   syncLegacyTaskStatus(item);
   return item;
+}
+
+export function reorderTaskRecords(tasks, orderedIds, { step = 1000 } = {}) {
+  const taskById = new Map((Array.isArray(tasks) ? tasks : []).map((item) => [item.id, item]));
+  const uniqueIds = [...new Set(Array.isArray(orderedIds) ? orderedIds : [])].filter((id) => taskById.has(id));
+  uniqueIds.forEach((id, index) => {
+    taskById.get(id).position = index * step;
+  });
+  return uniqueIds.map((id) => taskById.get(id));
 }
 
 export function setTaskPlanBucket(item, planBucket, { now = new Date().toISOString() } = {}) {
@@ -235,6 +249,8 @@ export function getTodayTaskSections(tasks, { today, priorityOrder = ["high", "m
   const compare = (a, b) => {
     const pinned = Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
     if (pinned) return pinned;
+    const position = (Number.isFinite(a.position) ? a.position : Number.MAX_SAFE_INTEGER) - (Number.isFinite(b.position) ? b.position : Number.MAX_SAFE_INTEGER);
+    if (position) return position;
     const time = String(a.dueTime || "99:99").localeCompare(String(b.dueTime || "99:99"));
     if (time) return time;
     const priority = (priorityRank.get(a.priority) ?? priorityOrder.length) - (priorityRank.get(b.priority) ?? priorityOrder.length);

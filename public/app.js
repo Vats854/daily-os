@@ -15,6 +15,7 @@ import {
   duplicateTaskRecord,
   getTodayTaskSections,
   normalizeTaskRecord,
+  reorderTaskRecords,
   parseBackupPayload,
   parseStateSnapshot,
   restoreTaskRecord,
@@ -23,7 +24,7 @@ import {
   setTaskWorkflowStatus,
   serializeStateSnapshot,
   updateTaskRecord
-} from "./task-state.js?v=148";
+} from "./task-state.js?v=154";
 
 const STORAGE_KEY = "second-brain-command-center:v1";
 const CONFLICT_BACKUP_KEY = "second-brain-command-center:conflict-backup";
@@ -344,6 +345,16 @@ function task(title, status = "inbox", area = "work", priority = "medium", estim
   return createTaskRecord({ title, status, area, priority, estimate, projectId });
 }
 
+function nextTaskPosition() {
+  const positions = (state?.tasks || []).map((item) => Number(item.position)).filter(Number.isFinite);
+  return (positions.length ? Math.max(...positions) : 0) + 1000;
+}
+
+function placeTaskAtEnd(item) {
+  if (item && !Number.isFinite(item.position)) item.position = nextTaskPosition();
+  return item;
+}
+
 function project({ id = crypto.randomUUID(), title, area = "work", progress = 0, journeyStage = "call", journeyStatus = "active", stageReason = "", nextTransition = "" }) {
   return {
     id,
@@ -561,8 +572,9 @@ function normalizeState(nextState) {
   nextState.projectStageEvents = Array.isArray(nextState.projectStageEvents) ? nextState.projectStageEvents : structuredClone(seedState.projectStageEvents);
   nextState.projectObstacles = Array.isArray(nextState.projectObstacles) ? nextState.projectObstacles : structuredClone(seedState.projectObstacles);
   nextState.tasks = Array.isArray(nextState.tasks) ? nextState.tasks : [];
-  nextState.tasks.forEach((item) => {
+  nextState.tasks.forEach((item, index) => {
     normalizeTaskRecord(item);
+    if (!Number.isFinite(item.position)) item.position = index * 1000;
     if (!priorities.includes(item.priority)) item.priority = "medium";
     item.estimate = Number.isFinite(Number(item.estimate)) ? Number(item.estimate) : 30;
     item.dueDate = item.dueDate || "";
@@ -1897,6 +1909,7 @@ function createTaskFromInbox(item, status = "backlog") {
     tags: ["inbox"],
     needsReview: item.status === "needs_review" || Boolean(item.parsed?.needsReview)
   };
+  placeTaskAtEnd(newTask);
   state.tasks.unshift(newTask);
   item.status = "processed";
   item.linkedType = "task";
@@ -2995,7 +3008,7 @@ function renderSimpleMainList(meta) {
   if (meta.kind === "tasks") tasks = state.tasks.filter((item) => item.planBucket === meta.status && item.workflowStatus !== "done");
   if (meta.kind === "done_tasks") tasks = state.tasks.filter((item) => item.workflowStatus === "done");
   if (meta.kind === "area") tasks = state.tasks.filter((item) => item.area === meta.area && item.workflowStatus !== "done");
-  tasks = [...tasks].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+  tasks = [...tasks].sort(compareTaskManualOrder);
   return tasks.length
     ? tasks.map(renderSimpleTaskRow).join("")
     : `<div class="simple-empty">Задач нет. Добавь первую сверху.</div>`;
@@ -3003,7 +3016,9 @@ function renderSimpleMainList(meta) {
 
 function renderSimpleTaskRow(item) {
   const dueLabel = taskListDueLabel(item);
-  return `<article class="simple-row ${state.ui?.selectedTaskId === item.id ? "active" : ""}" data-task-id="${escapeHtml(item.id)}" data-simple-object="task">
+  const orderingEnabled = window.matchMedia?.("(pointer: fine) and (min-width: 721px)")?.matches;
+  return `<article class="simple-row ${state.ui?.selectedTaskId === item.id ? "active" : ""}" data-task-id="${escapeHtml(item.id)}" data-simple-object="task" data-task-order-row>
+    <span class="simple-task-drag-handle" draggable="${orderingEnabled ? "true" : "false"}" aria-hidden="true" title="Перетащить задачу"><img src="/icons/grip-vertical.svg" alt="" /></span>
     <button type="button" class="task-toggle ${item.workflowStatus === "done" ? "done" : ""}" data-action="toggle" title="Готово"></button>
     <div>
       <span>${item.pinned ? `<span class="simple-pin-mark" title="Закреплено">●</span>` : ""}${escapeHtml(item.title)}</span>
@@ -3011,6 +3026,13 @@ function renderSimpleTaskRow(item) {
     </div>
     <button type="button" class="simple-more" data-simple-action="select-task-menu" aria-label="Параметры задачи"><img src="/icons/ellipsis.svg" alt="" /></button>
   </article>`;
+}
+
+function compareTaskManualOrder(a, b) {
+  return Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))
+    || (Number.isFinite(a.position) ? a.position : Number.MAX_SAFE_INTEGER) - (Number.isFinite(b.position) ? b.position : Number.MAX_SAFE_INTEGER)
+    || String(a.createdAt || "").localeCompare(String(b.createdAt || ""))
+    || String(a.id || "").localeCompare(String(b.id || ""));
 }
 
 function taskListDueLabel(item) {
@@ -3315,7 +3337,7 @@ function addSimpleComposerItem(text, meta) {
   }
   const status = meta.kind === "tasks" ? meta.status : "inbox";
   const area = meta.area || state.ui?.simpleArea || suggestedTaskArea(text);
-  const item = task(text, status || "inbox", area, "medium", 25, null);
+  const item = placeTaskAtEnd(task(text, status || "inbox", area, "medium", 25, null));
   state.tasks.unshift(item);
   selectTask(item.id);
   state.assistantActions.unshift(action("Задача добавлена", text, "confirmed"));
@@ -3391,7 +3413,7 @@ function updateTaskField(item, field, value) {
 }
 
 function addTaskToToday(title) {
-  const newTask = task(title.trim(), "today", "personal", "medium", 30);
+  const newTask = placeTaskAtEnd(task(title.trim(), "today", "personal", "medium", 30));
   state.tasks.unshift(newTask);
   selectTask(newTask.id);
   state.assistantActions.unshift(action("Задача добавлена", newTask.title, "confirmed"));
@@ -4162,6 +4184,7 @@ document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>
     const item = getSelectedTask();
     if (!item) return;
     const duplicate = duplicateTaskRecord(item);
+    duplicate.position = nextTaskPosition();
     state.tasks.unshift(duplicate);
     selectTask(duplicate.id);
     state.ui.taskMenuOpen = false;
@@ -4408,7 +4431,7 @@ document.querySelector("#simpleApp")?.addEventListener("submit", (event) => {
     if (projectForm.dataset.simpleProjectForm === "create-task") {
       const title = String(formData.get("title") || "").trim();
       if (!title) return;
-      const item = task(title, "this_week", projectItem.area || "work", "medium", 25, projectItem.id);
+      const item = placeTaskAtEnd(task(title, "this_week", projectItem.area || "work", "medium", 25, projectItem.id));
       state.tasks.unshift(item);
       state.assistantActions.unshift(action("Задача проекта добавлена", `${projectItem.title}: ${title}`, "confirmed"));
     }
@@ -5087,7 +5110,24 @@ document.querySelector("#searchResults")?.addEventListener("click", (event) => {
   saveState();
 });
 
+let taskOrderDragId = "";
+
+function clearTaskOrderDragState() {
+  taskOrderDragId = "";
+  document.querySelectorAll(".task-order-dragging, .task-order-before, .task-order-after").forEach((row) => {
+    row.classList.remove("task-order-dragging", "task-order-before", "task-order-after");
+  });
+}
+
 document.addEventListener("dragstart", (event) => {
+  const row = event.target.closest("[data-task-order-row][data-task-id]");
+  if (row && currentSimpleModule() === "tasks" && state.settings.activeView !== "board") {
+    taskOrderDragId = row.dataset.taskId;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", `task-order:${taskOrderDragId}`);
+    row.classList.add("task-order-dragging");
+    return;
+  }
   const card = event.target.closest("[data-kanban-card][data-task-id]");
   if (!card || currentSimpleModule() !== "tasks" || state.settings.activeView !== "board") return;
   event.dataTransfer.effectAllowed = "move";
@@ -5096,11 +5136,26 @@ document.addEventListener("dragstart", (event) => {
 });
 
 document.addEventListener("dragend", (event) => {
+  clearTaskOrderDragState();
   event.target.closest("[data-kanban-card]")?.classList.remove("dragging");
   document.querySelectorAll("[data-workflow-dropzone].drag-over").forEach((column) => column.classList.remove("drag-over"));
 });
 
 document.addEventListener("dragover", (event) => {
+  const row = event.target.closest("[data-task-order-row][data-task-id]");
+  if (taskOrderDragId && row && row.dataset.taskId !== taskOrderDragId) {
+    const draggedRow = document.querySelector(`[data-task-order-row][data-task-id="${CSS.escape(taskOrderDragId)}"]`);
+    const sameContainer = (draggedRow?.closest(".simple-task-section") || draggedRow?.closest(".simple-list")) === (row.closest(".simple-task-section") || row.closest(".simple-list"));
+    const draggedTask = state.tasks.find((item) => item.id === taskOrderDragId);
+    const targetTask = state.tasks.find((item) => item.id === row.dataset.taskId);
+    if (!sameContainer || !draggedTask || !targetTask || Boolean(draggedTask.pinned) !== Boolean(targetTask.pinned)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const before = event.clientY < row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
+    document.querySelectorAll(".task-order-before, .task-order-after").forEach((item) => item.classList.remove("task-order-before", "task-order-after"));
+    row.classList.add(before ? "task-order-before" : "task-order-after");
+    return;
+  }
   const column = event.target.closest("[data-workflow-dropzone]");
   if (!column) return;
   event.preventDefault();
@@ -5109,6 +5164,37 @@ document.addEventListener("dragover", (event) => {
 });
 
 document.addEventListener("drop", (event) => {
+  const row = event.target.closest("[data-task-order-row][data-task-id]");
+  if (taskOrderDragId && row && row.dataset.taskId !== taskOrderDragId) {
+    const draggedRow = document.querySelector(`[data-task-order-row][data-task-id="${CSS.escape(taskOrderDragId)}"]`);
+    const container = row.closest(".simple-task-section") || row.closest(".simple-list");
+    const sameContainer = (draggedRow?.closest(".simple-task-section") || draggedRow?.closest(".simple-list")) === container;
+    const draggedTask = state.tasks.find((item) => item.id === taskOrderDragId);
+    const targetTask = state.tasks.find((item) => item.id === row.dataset.taskId);
+    if (!sameContainer || !draggedTask || !targetTask || Boolean(draggedTask.pinned) !== Boolean(targetTask.pinned)) {
+      clearTaskOrderDragState();
+      return;
+    }
+    event.preventDefault();
+    const before = event.clientY < row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
+    const orderedIds = [...container.querySelectorAll("[data-task-order-row][data-task-id]")]
+      .map((item) => item.dataset.taskId)
+      .filter((id) => Boolean(state.tasks.find((taskItem) => taskItem.id === id)?.pinned) === Boolean(draggedTask.pinned));
+    const fromIndex = orderedIds.indexOf(taskOrderDragId);
+    let targetIndex = orderedIds.indexOf(row.dataset.taskId);
+    if (fromIndex < 0 || targetIndex < 0) {
+      clearTaskOrderDragState();
+      return;
+    }
+    orderedIds.splice(fromIndex, 1);
+    targetIndex = orderedIds.indexOf(row.dataset.taskId) + (before ? 0 : 1);
+    orderedIds.splice(targetIndex, 0, taskOrderDragId);
+    reorderTaskRecords(state.tasks, orderedIds);
+    state.assistantActions.unshift(action("Порядок задач изменён", draggedTask.title, "confirmed"));
+    clearTaskOrderDragState();
+    saveState();
+    return;
+  }
   const column = event.target.closest("[data-workflow-dropzone]");
   if (!column) return;
   event.preventDefault();
