@@ -24,7 +24,7 @@ import {
   setTaskWorkflowStatus,
   serializeStateSnapshot,
   updateTaskRecord
-} from "./task-state.js?v=154";
+} from "./task-state.js?v=155";
 
 const STORAGE_KEY = "second-brain-command-center:v1";
 const CONFLICT_BACKUP_KEY = "second-brain-command-center:conflict-backup";
@@ -32,7 +32,17 @@ const PRE_IMPORT_BACKUP_KEY = "second-brain-command-center:pre-import-backup";
 const PRE_HYDRATE_BACKUP_KEY = "second-brain-command-center:pre-hydrate-backup";
 const PENDING_CLOUD_SAVE_KEY = "second-brain-command-center:pending-cloud-save";
 const LAST_EXPORT_AT_KEY = "second-brain-command-center:last-export-at";
-const UNDO_TTL_MS = 12_000;
+const UNDO_TTL_MS = 6_000;
+const defaultShortcuts = Object.freeze({
+  search: "mod+k",
+  new: "q",
+  today: "t",
+  calendar: "c",
+  notes: "n",
+  focus: "f"
+});
+const shortcutLabels = Object.freeze({ search: "Поиск", new: "Новая запись", today: "Сегодня", calendar: "Календарь", notes: "Заметки", focus: "Фокус" });
+const reservedShortcuts = new Set(["mod+l", "mod+n", "mod+q", "mod+r", "mod+t", "mod+w"]);
 const isLocalDev = ["127.0.0.1", "localhost", ""].includes(window.location.hostname);
 const cloudSync = {
   configured: false,
@@ -59,6 +69,7 @@ const workflowColumns = [
   ["in_progress", "В работе"],
   ["done", "Готово"]
 ];
+let quickTaskDraft = { signature: "", planBucket: "inbox", dueDate: "", area: "", priority: "medium" };
 
 const areaLabels = {
   career: "карьера",
@@ -152,8 +163,10 @@ const seedState = {
   settings: {
     autonomy: "maximum",
     activeView: "today",
+    appearanceMode: "system",
     appearanceTheme: "sage",
-    appearanceFont: "clean"
+    appearanceFont: "clean",
+    shortcuts: { ...defaultShortcuts }
   },
   lists: structuredClone(defaultTaskLists),
   noteFolders: structuredClone(defaultNoteFolders),
@@ -330,8 +343,10 @@ state.ui.simpleModule = simpleModules.has(state.ui.simpleModule)
   ? state.ui.simpleModule
   : state.settings.activeView === "notes" ? "notes" : "tasks";
 state.ui.listMenuId = "";
-state.ui.pendingDeleteTaskId = state.ui.pendingDeleteTaskId || "";
-state.ui.pendingDeleteNoteId = state.ui.pendingDeleteNoteId || "";
+state.ui.pendingDeleteTaskId = "";
+state.ui.pendingDeleteNoteId = "";
+state.ui.pendingDeleteNoteFolderId = "";
+state.ui.pendingDeleteListId = "";
 state.ui.taskMenuOpen = false;
 state.ui.taskMenuPosition = null;
 state.ui.taskDecompositionDraft = null;
@@ -495,7 +510,14 @@ function restoreUndo() {
 
 function normalizeState(nextState) {
   nextState.settings = { ...seedState.settings, ...(nextState.settings || {}) };
+  nextState.settings.shortcuts = { ...defaultShortcuts, ...(nextState.settings.shortcuts || {}) };
+  Object.keys(defaultShortcuts).forEach((actionId) => {
+    if (typeof nextState.settings.shortcuts[actionId] !== "string" || !nextState.settings.shortcuts[actionId]) {
+      nextState.settings.shortcuts[actionId] = defaultShortcuts[actionId];
+    }
+  });
   if (!["sage", "sky", "clay"].includes(nextState.settings.appearanceTheme)) nextState.settings.appearanceTheme = "sage";
+  if (!["system", "light", "dark"].includes(nextState.settings.appearanceMode)) nextState.settings.appearanceMode = "system";
   if (!["clean", "soft", "editorial"].includes(nextState.settings.appearanceFont)) nextState.settings.appearanceFont = "clean";
   if (nextState.settings.activeView === "overview") nextState.settings.activeView = "projects";
   if (!["inbox", "today", "week", "all", "projects", "board", "focus", "habits", "notes", "log", "done"].includes(nextState.settings.activeView)) {
@@ -513,14 +535,19 @@ function normalizeState(nextState) {
     ? nextState.ui.lastTaskView
     : (simpleTaskViews.has(nextState.settings.activeView) ? nextState.settings.activeView : "today");
   nextState.ui.listMenuId = "";
-  nextState.ui.pendingDeleteTaskId = nextState.ui.pendingDeleteTaskId || "";
-  nextState.ui.pendingDeleteNoteId = nextState.ui.pendingDeleteNoteId || "";
-  nextState.ui.pendingDeleteNoteFolderId = nextState.ui.pendingDeleteNoteFolderId || "";
+  // Confirmation dialogs are transient UI. Restoring them from local or cloud
+  // state can leave an invisible backdrop above the whole application.
+  nextState.ui.pendingDeleteTaskId = "";
+  nextState.ui.pendingDeleteNoteId = "";
+  nextState.ui.pendingDeleteNoteFolderId = "";
+  nextState.ui.pendingDeleteListId = "";
   nextState.ui.selectedNoteFolderId = nextState.ui.selectedNoteFolderId || "";
   nextState.ui.noteFolderMenuId = "";
   nextState.ui.taskMenuOpen = false;
   nextState.ui.taskMenuPosition = null;
   nextState.ui.appearanceOpen = false;
+  nextState.ui.recordingShortcutAction = "";
+  nextState.ui.shortcutError = "";
   nextState.ui.selectedCalendarBlockId = null;
   nextState.ui.calendarWeekOffset = Number.isInteger(nextState.ui.calendarWeekOffset) ? nextState.ui.calendarWeekOffset : 0;
   nextState.lists = Array.isArray(nextState.lists) && nextState.lists.length
@@ -2135,6 +2162,66 @@ function setSimpleModule(module) {
   if (module !== "notes") state.ui.selectedNoteId = null;
 }
 
+function shortcutFromEvent(event) {
+  const key = String(event.key || "").toLowerCase();
+  if (["meta", "control", "alt", "shift"].includes(key)) return "";
+  const normalizedKey = key === " " ? "space" : key;
+  const parts = [];
+  if (event.metaKey || event.ctrlKey) parts.push("mod");
+  if (event.altKey) parts.push("alt");
+  if (event.shiftKey) parts.push("shift");
+  parts.push(normalizedKey);
+  return parts.join("+");
+}
+
+function shortcutDisplay(value) {
+  return String(value || "")
+    .split("+")
+    .map((part) => ({ mod: navigator.platform.includes("Mac") ? "⌘" : "Ctrl", alt: navigator.platform.includes("Mac") ? "⌥" : "Alt", shift: "⇧", space: "Space" }[part] || part.toUpperCase()))
+    .join(" ");
+}
+
+function renderShortcutSettings() {
+  const root = document.querySelector("#shortcutOptions");
+  const hint = document.querySelector("#shortcutHint");
+  if (!root || !hint) return;
+  root.querySelectorAll("[data-shortcut-action]").forEach((button) => {
+    const actionId = button.dataset.shortcutAction;
+    const recording = state.ui.recordingShortcutAction === actionId;
+    button.classList.toggle("recording", recording);
+    button.querySelector("kbd").textContent = recording ? "Нажми клавиши…" : shortcutDisplay(state.settings.shortcuts[actionId]);
+  });
+  hint.classList.toggle("error", Boolean(state.ui.shortcutError));
+  hint.textContent = state.ui.shortcutError || (state.ui.recordingShortcutAction ? "Escape отменяет запись." : "Нажми на команду, затем введи сочетание.");
+}
+
+function runShortcutAction(actionId) {
+  if (actionId === "search") {
+    document.querySelector("#simpleSearch")?.focus();
+    return;
+  }
+  if (actionId === "new") {
+    if (["calendar", "focus", "log"].includes(currentSimpleModule())) {
+      setSimpleModule("tasks");
+      state.settings.activeView = "today";
+      state.ui.lastTaskView = "today";
+      renderSimpleApp();
+    }
+    document.querySelector("#simpleComposerInput")?.focus();
+    return;
+  }
+  if (actionId === "today") {
+    setSimpleModule("tasks");
+    state.settings.activeView = "today";
+    state.ui.lastTaskView = "today";
+  } else if (["calendar", "notes", "focus"].includes(actionId)) {
+    setSimpleModule(actionId);
+  } else {
+    return;
+  }
+  saveState();
+}
+
 function renderSimpleTaskListRow(item) {
   const count = state.tasks.filter((taskItem) => taskItem.area === item.id && taskItem.workflowStatus !== "done").length;
   if (state.ui?.renamingListId === item.id) {
@@ -2236,18 +2323,23 @@ function renderSimpleApp() {
   root.dataset.module = module;
   root.dataset.view = state.settings.activeView || "today";
   root.dataset.theme = state.settings.appearanceTheme;
+  const systemDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches;
+  root.dataset.colorMode = state.settings.appearanceMode === "system"
+    ? (systemDark ? "dark" : "light")
+    : state.settings.appearanceMode;
+  root.dataset.appearanceMode = state.settings.appearanceMode;
   root.dataset.font = state.settings.appearanceFont;
   if (module !== "tasks") state.ui.simpleArea = "";
   const meta = simpleViewMeta();
   const counts = simpleCounts();
 
   const syncStatusLabels = {
-    conflict: "нужно выбрать версию",
-    error: "не сохранено",
+    conflict: "локально сохранено · конфликт",
+    error: "сохранено на устройстве",
     syncing: "сохраняю…",
     synced: "синхронизировано",
-    private: "вход не выполнен",
-    local: "только устройство"
+    private: "сохранено на устройстве",
+    local: "сохранено на устройстве"
   };
   document.querySelector("#simpleSyncStatus").textContent = syncStatusLabels[cloudSync.status] || (cloudSync.session ? "синхронизировано" : "только устройство");
   document.querySelectorAll("#simpleSyncToggle, #simpleMobileSyncToggle").forEach((syncToggle) => {
@@ -2263,19 +2355,24 @@ function renderSimpleApp() {
   document.querySelector("#simpleComposerInput").placeholder = placeholder;
   document.querySelector("#simpleComposer button[type='submit']").textContent = meta.kind === "inbox" ? "Сохранить" : ["notes", "habits", "projects"].includes(meta.kind) ? "Создать" : "Добавить";
   document.querySelector("#simpleComposer").hidden = ["calendar", "focus", "log"].includes(meta.kind);
+  renderSimpleTaskQuickMeta(meta);
   if (calendarInstance || calendarTaskDraggable) destroyInteractiveCalendar();
   document.querySelector("#simpleList").innerHTML = renderSimpleMainList(meta);
   const detailMarkup = renderSimpleDetail(meta);
   document.querySelector("#simpleDetail").innerHTML = detailMarkup;
   const hasSelectedDetail = module === "notes"
     ? state.notes.some((item) => item.id === state.ui?.selectedNoteId)
+    : module === "capture"
+      ? state.inboxItems.some((item) => item.id === state.ui?.selectedInboxId)
     : module === "tasks"
       ? state.tasks.some((item) => item.id === state.ui?.selectedTaskId)
       : module === "habits"
         ? state.habits.some((item) => item.id === state.ui?.selectedHabitId)
       : module === "calendar" && state.dailyPlan.timeBlocks.some((item) => item.id === state.ui?.selectedCalendarBlockId);
   root.classList.toggle("detail-open", hasSelectedDetail);
-  document.querySelector("#simpleToastLayer").innerHTML = renderSimpleToasts();
+  const toastLayer = document.querySelector("#simpleToastLayer");
+  toastLayer.innerHTML = renderSimpleToasts();
+  toastLayer.classList.toggle("has-confirmation", Boolean(toastLayer.querySelector(".confirm-toast")));
   renderSimpleSearchResults(simpleSearchQuery);
   document.querySelector("#simpleAuthButton").hidden = Boolean(cloudSync.session) || !cloudSync.configured;
   document.querySelector("#simpleSignOutButton").hidden = !cloudSync.session;
@@ -2284,12 +2381,58 @@ function renderSimpleApp() {
   });
   const appearanceMenu = document.querySelector("#simpleAppearanceMenu");
   const appearanceToggle = document.querySelector("#simpleAppearanceToggle");
+  const mobileAppearanceToggle = document.querySelector("#simpleMobileAppearanceToggle");
   appearanceMenu.hidden = !state.ui.appearanceOpen;
   appearanceToggle.setAttribute("aria-expanded", state.ui.appearanceOpen ? "true" : "false");
+  mobileAppearanceToggle?.setAttribute("aria-expanded", state.ui.appearanceOpen ? "true" : "false");
   appearanceMenu.querySelectorAll("[data-appearance-theme]").forEach((button) => button.classList.toggle("active", button.dataset.appearanceTheme === state.settings.appearanceTheme));
+  appearanceMenu.querySelectorAll("[data-appearance-mode]").forEach((button) => button.classList.toggle("active", button.dataset.appearanceMode === state.settings.appearanceMode));
   appearanceMenu.querySelectorAll("[data-appearance-font]").forEach((button) => button.classList.toggle("active", button.dataset.appearanceFont === state.settings.appearanceFont));
+  renderShortcutSettings();
   if (module === "calendar") window.requestAnimationFrame(mountInteractiveCalendar);
   scheduleSystemReminders();
+}
+
+function taskComposerDefaults(meta) {
+  const planBucket = meta.kind === "tasks" && ["inbox", "backlog", "this_week", "today"].includes(meta.status)
+    ? meta.status
+    : "inbox";
+  return {
+    signature: `${meta.kind}:${meta.status || ""}:${meta.area || ""}`,
+    planBucket,
+    dueDate: meta.status === "today" ? todayIso : "",
+    area: meta.area || state.ui?.simpleArea || (taskListIds().includes("personal") ? "personal" : taskLists()[0]?.id || "personal"),
+    priority: "medium"
+  };
+}
+
+function renderSimpleTaskQuickMeta(meta) {
+  const root = document.querySelector("#simpleTaskQuickMeta");
+  if (!root) return;
+  const taskKinds = new Set(["tasks", "all_tasks", "done_tasks", "area", "kanban"]);
+  root.hidden = !taskKinds.has(meta.kind);
+  if (root.hidden) {
+    root.innerHTML = "";
+    return;
+  }
+  const defaults = taskComposerDefaults(meta);
+  if (quickTaskDraft.signature !== defaults.signature) quickTaskDraft = defaults;
+  const planField = meta.status === "today" ? "" : `<label><span>План</span><select data-quick-task-field="planBucket">
+      ${planBuckets.map(([value, label]) => `<option value="${value}" ${quickTaskDraft.planBucket === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
+    </select></label>`;
+  const dateField = meta.status === "today" ? "" : `<label><span>Дата</span><select data-quick-task-field="dueDate">
+      <option value="" ${!quickTaskDraft.dueDate ? "selected" : ""}>Без даты</option>
+      <option value="${todayIso}" ${quickTaskDraft.dueDate === todayIso ? "selected" : ""}>Сегодня</option>
+      <option value="${addDaysIso(1)}" ${quickTaskDraft.dueDate === addDaysIso(1) ? "selected" : ""}>Завтра</option>
+    </select></label>`;
+  root.innerHTML = `${planField}${dateField}<label><span>Список</span><select data-quick-task-field="area" aria-label="Список новой задачи">
+      ${taskLists().map(({ id, title }) => `<option value="${escapeHtml(id)}" ${quickTaskDraft.area === id ? "selected" : ""}>${escapeHtml(title)}</option>`).join("")}
+    </select></label>
+    <label><span>Приоритет</span><select data-quick-task-field="priority" aria-label="Приоритет новой задачи">
+      <option value="low" ${quickTaskDraft.priority === "low" ? "selected" : ""}>Низкий</option>
+      <option value="medium" ${quickTaskDraft.priority === "medium" ? "selected" : ""}>Средний</option>
+      <option value="high" ${quickTaskDraft.priority === "high" ? "selected" : ""}>Высокий</option>
+    </select></label>`;
 }
 
 function renderSimpleSyncPanel() {
@@ -2304,17 +2447,17 @@ function renderSimpleSyncPanel() {
   const pending = cloudSync.inFlight || Boolean(cloudSync.pendingSnapshot) || Boolean(cloudSync.timer);
   const statusTitles = {
     conflict: "Нужно выбрать версию",
-    error: "Не удалось сохранить",
+    error: "Сохранено на устройстве",
     syncing: "Сохраняю изменения",
     synced: "Данные в облаке",
-    private: "Требуется вход",
-    local: "Локальный режим"
+    private: "Сохранено на устройстве",
+    local: "Сохранено на устройстве"
   };
   const statusTitle = statusTitles[cloudSync.status] || (cloudSync.session ? "Данные в облаке" : "Локальный режим");
   const message = cloudSync.status === "conflict"
     ? "Выбери облачную или локальную версию в уведомлении сверху. До выбора облако не перезаписывается."
     : cloudSync.error
-      ? friendlySyncError(cloudSync.error)
+      ? `Локальная копия сохранена. Облако пока недоступно: ${friendlySyncError(cloudSync.error)}`
       : cloudSync.session
         ? "Изменения с этого устройства проходят проверку версии перед записью."
         : cloudSync.configured
@@ -2449,6 +2592,21 @@ function renderSimpleToasts() {
       <button class="danger-button" type="button" data-simple-list-action="confirm-delete">Удалить</button>
     </div>
   </section>`;
+}
+
+function clearPendingConfirmation() {
+  const ui = state.ui || {};
+  const hadConfirmation = Boolean(
+    ui.pendingDeleteTaskId
+    || ui.pendingDeleteNoteId
+    || ui.pendingDeleteNoteFolderId
+    || ui.pendingDeleteListId
+  );
+  ui.pendingDeleteTaskId = "";
+  ui.pendingDeleteNoteId = "";
+  ui.pendingDeleteNoteFolderId = "";
+  ui.pendingDeleteListId = "";
+  return hadConfirmation;
 }
 
 function localDateIso(date) {
@@ -3020,10 +3178,11 @@ function renderSimpleTaskRow(item) {
   return `<article class="simple-row ${state.ui?.selectedTaskId === item.id ? "active" : ""}" data-task-id="${escapeHtml(item.id)}" data-simple-object="task" data-task-order-row>
     <span class="simple-task-drag-handle" draggable="${orderingEnabled ? "true" : "false"}" aria-hidden="true" title="Перетащить задачу"><img src="/icons/grip-vertical.svg" alt="" /></span>
     <button type="button" class="task-toggle ${item.workflowStatus === "done" ? "done" : ""}" data-action="toggle" title="Готово"></button>
-    <div>
-      <span>${item.pinned ? `<span class="simple-pin-mark" title="Закреплено">●</span>` : ""}${escapeHtml(item.title)}</span>
-      <small><span class="simple-priority-flag ${escapeHtml(item.priority)}" aria-hidden="true">⚑</span>${dueLabel ? `<span class="simple-task-due ${item.dueDate && item.dueDate < todayIso ? "overdue" : ""}">${escapeHtml(dueLabel)}</span> · ` : ""}${escapeHtml(listLabel(item.area))}${item.workflowStatus === "in_progress" ? ` · ${escapeHtml(workflowLabel(item.workflowStatus))}` : ""}${(item.tags || []).length ? ` · ${(item.tags || []).slice(0, 2).map((tag) => `#${escapeHtml(tag)}`).join(" ")}` : ""}</small>
+    <div class="simple-task-copy">
+      <span class="simple-task-title">${item.pinned ? `<span class="simple-pin-mark" title="Закреплено">●</span>` : ""}${escapeHtml(item.title)}</span>
+      <small class="simple-task-meta"><span class="simple-priority-flag ${escapeHtml(item.priority)}" aria-hidden="true">⚑</span>${dueLabel ? `<span class="simple-task-due ${item.dueDate && item.dueDate < todayIso ? "overdue" : ""}">${escapeHtml(dueLabel)}</span><span aria-hidden="true">·</span>` : ""}<span>${escapeHtml(listLabel(item.area))}</span>${item.workflowStatus === "in_progress" ? `<span aria-hidden="true">·</span><span>${escapeHtml(workflowLabel(item.workflowStatus))}</span>` : ""}${(item.tags || []).length ? `<span aria-hidden="true">·</span><span>${(item.tags || []).slice(0, 2).map((tag) => `#${escapeHtml(tag)}`).join(" ")}</span>` : ""}</small>
     </div>
+    <button type="button" class="simple-task-plan-action" data-simple-plan-action="${item.planBucket === "today" ? "inbox" : "today"}" aria-label="${item.planBucket === "today" ? "Убрать из Сегодня" : "Запланировать на сегодня"}" title="${item.planBucket === "today" ? "Убрать из Сегодня" : "Запланировать на сегодня"}"><img src="/icons/${item.planBucket === "today" ? "inbox" : "calendar-days"}.svg" alt="" /></button>
     <button type="button" class="simple-more" data-simple-action="select-task-menu" aria-label="Параметры задачи"><img src="/icons/ellipsis.svg" alt="" /></button>
   </article>`;
 }
@@ -3119,9 +3278,9 @@ function renderSimpleInboxRow(item) {
   const area = item.parsed?.area || "personal";
   const taskDestination = listLabel(area);
   const noteDestination = noteFolderLabel(noteFolderForArea(area));
-  return `<article class="simple-inbox-row ${item.status === "needs_review" ? "needs-review" : ""}" data-inbox-id="${escapeHtml(item.id)}">
+  return `<article class="simple-inbox-row ${item.status === "needs_review" ? "needs-review" : ""} ${state.ui?.selectedInboxId === item.id ? "active" : ""}" data-inbox-id="${escapeHtml(item.id)}">
     <div class="simple-inbox-state"><span>${escapeHtml(inboxStatusLabel(item.status))}</span><small>${escapeHtml(kindLabel)}</small></div>
-    <div class="simple-inbox-copy"><strong>${escapeHtml(item.parsed?.title || item.text)}</strong><p>${escapeHtml(item.text)}</p>${linked ? `<small>${escapeHtml(inboxLinkedTypeLabel(item))} · ${escapeHtml(inboxDestinationLabel(item, linked))}</small>` : `<small class="simple-inbox-pending">Выбери результат. Без выбора запись останется во Входящих.</small>`}</div>
+    <button type="button" class="simple-inbox-copy" data-simple-action="select-inbox" aria-label="Открыть входящую запись"><strong>${escapeHtml(item.parsed?.title || item.text)}</strong><p>${escapeHtml(item.text)}</p>${linked ? `<small>${escapeHtml(inboxLinkedTypeLabel(item))} · ${escapeHtml(inboxDestinationLabel(item, linked))}</small>` : `<small class="simple-inbox-pending">Открой запись или сразу выбери, куда её сохранить.</small>`}</button>
     <div class="simple-inbox-actions">
       ${linked ? `<button type="button" class="primary" data-inbox-action="open-linked">${openLabel}</button>` : ""}
       ${linked && item.linkedType === "note" ? `<button type="button" data-inbox-action="convert-to-task">Сделать задачей</button>` : ""}
@@ -3171,6 +3330,23 @@ function renderSimpleHabitGroups() {
 
 function renderSimpleDetail(meta) {
   const module = currentSimpleModule();
+  const inboxItem = module === "capture"
+    ? state.inboxItems.find((item) => item.id === state.ui?.selectedInboxId) || null
+    : null;
+  if (inboxItem) {
+    const linked = getInboxLinkedObject(inboxItem);
+    const area = inboxItem.parsed?.area || "personal";
+    return `<section class="simple-detail-card simple-inbox-editor" data-inbox-id="${escapeHtml(inboxItem.id)}">
+      <div class="simple-detail-head">
+        <span class="label">Входящая запись</span>
+        <button type="button" class="simple-detail-close" data-simple-action="close-inbox-detail" aria-label="Закрыть запись"><img src="/icons/x.svg" alt="" /></button>
+      </div>
+      <label><span>Заголовок</span><input class="simple-title-input" data-inbox-field="title" value="${escapeHtml(inboxItem.parsed?.title || inboxItem.text)}" /></label>
+      <label><span>Исходный текст</span><textarea class="simple-description-input" data-inbox-field="text" placeholder="Мысль, задача, идея или контекст">${escapeHtml(inboxItem.text)}</textarea></label>
+      ${linked ? `<div class="simple-inbox-editor-result"><span>Уже сохранено</span><strong>${escapeHtml(inboxLinkedTypeLabel(inboxItem))} · ${escapeHtml(inboxDestinationLabel(inboxItem, linked))}</strong><button type="button" class="primary" data-inbox-action="open-linked">Открыть</button></div>` : `<div class="simple-inbox-editor-outcomes"><span class="label">Куда сохранить</span><p>Выбор создаст объект. Без выбора запись останется во Входящих.</p><div><button type="button" class="primary" data-inbox-action="task-today"><strong>Задача сегодня</strong><small>${escapeHtml(listLabel(area))}</small></button><button type="button" data-inbox-action="task-backlog"><strong>Задача в бэклог</strong><small>${escapeHtml(listLabel(area))}</small></button><button type="button" data-inbox-action="note"><strong>Заметка</strong><small>${escapeHtml(noteFolderLabel(noteFolderForArea(area)))}</small></button></div></div>`}
+      <button type="button" class="danger-text" data-inbox-action="delete">Удалить запись</button>
+    </section>`;
+  }
   const habitItem = module === "habits" ? state.habits.find((item) => item.id === state.ui?.selectedHabitId) || null : null;
   if (habitItem) {
     const weekdays = Array.isArray(habitItem.weekdays) ? habitItem.weekdays : allHabitWeekdays;
@@ -3335,9 +3511,10 @@ function addSimpleComposerItem(text, meta) {
     state.assistantActions.unshift(action("Проект создан", text, "confirmed"));
     return;
   }
-  const status = meta.kind === "tasks" ? meta.status : "inbox";
-  const area = meta.area || state.ui?.simpleArea || suggestedTaskArea(text);
-  const item = placeTaskAtEnd(task(text, status || "inbox", area, "medium", 25, null));
+  const status = quickTaskDraft.planBucket || (meta.kind === "tasks" ? meta.status : "inbox");
+  const area = quickTaskDraft.area || meta.area || state.ui?.simpleArea || suggestedTaskArea(text);
+  const item = placeTaskAtEnd(task(text, status || "inbox", area, quickTaskDraft.priority || "medium", 25, null));
+  item.dueDate = quickTaskDraft.dueDate || null;
   state.tasks.unshift(item);
   selectTask(item.id);
   state.assistantActions.unshift(action("Задача добавлена", text, "confirmed"));
@@ -3649,7 +3826,27 @@ document.querySelectorAll(".nav-button").forEach((button) => {
   });
 });
 
+// Keep module switching independent from panels that are rebuilt during render.
+document.addEventListener("click", (event) => {
+  const moduleButton = event.target.closest?.("[data-simple-module]");
+  if (!moduleButton || !document.querySelector("#simpleApp")?.contains(moduleButton)) return;
+  if (moduleButton.dataset.simpleModule === "search") {
+    document.querySelector("#simpleSearch")?.focus();
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  setSimpleModule(moduleButton.dataset.simpleModule);
+  saveState();
+}, true);
+
 document.querySelector("#simpleApp")?.addEventListener("click", async (event) => {
+  if (event.target.matches("#simpleToastLayer.has-confirmation")) {
+    clearPendingConfirmation();
+    saveState();
+    return;
+  }
+
   if (event.target.closest("[data-simple-undo]")) {
     restoreUndo();
     return;
@@ -3746,7 +3943,7 @@ document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>
     return;
   }
 
-  const appearanceToggle = event.target.closest("#simpleAppearanceToggle");
+  const appearanceToggle = event.target.closest("#simpleAppearanceToggle, #simpleMobileAppearanceToggle");
   if (appearanceToggle) {
     state.ui.appearanceOpen = !state.ui.appearanceOpen;
     simpleSyncPanelOpen = false;
@@ -3761,6 +3958,13 @@ document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>
     return;
   }
 
+  const modeButton = event.target.closest("[data-appearance-mode]");
+  if (modeButton) {
+    state.settings.appearanceMode = modeButton.dataset.appearanceMode;
+    saveState();
+    return;
+  }
+
   const fontButton = event.target.closest("[data-appearance-font]");
   if (fontButton) {
     state.settings.appearanceFont = fontButton.dataset.appearanceFont;
@@ -3768,13 +3972,18 @@ document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>
     return;
   }
 
-  const moduleButton = event.target.closest("[data-simple-module]");
-  if (moduleButton) {
-    if (moduleButton.dataset.simpleModule === "search") {
-      document.querySelector("#simpleSearch")?.focus();
-      return;
-    }
-    setSimpleModule(moduleButton.dataset.simpleModule);
+  const shortcutButton = event.target.closest("[data-shortcut-action]");
+  if (shortcutButton) {
+    state.ui.recordingShortcutAction = shortcutButton.dataset.shortcutAction;
+    state.ui.shortcutError = "";
+    renderSimpleApp();
+    return;
+  }
+
+  if (event.target.closest("#shortcutReset")) {
+    state.settings.shortcuts = { ...defaultShortcuts };
+    state.ui.recordingShortcutAction = "";
+    state.ui.shortcutError = "";
     saveState();
     return;
   }
@@ -4030,6 +4239,22 @@ document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>
     return;
   }
 
+  const inboxSelect = event.target.closest('[data-simple-action="select-inbox"]');
+  if (inboxSelect) {
+    const row = inboxSelect.closest("[data-inbox-id]");
+    state.ui.selectedInboxId = row?.dataset.inboxId || null;
+    state.ui.selectedTaskId = null;
+    state.ui.selectedNoteId = null;
+    saveState();
+    return;
+  }
+
+  if (event.target.closest('[data-simple-action="close-inbox-detail"]')) {
+    state.ui.selectedInboxId = null;
+    saveState();
+    return;
+  }
+
   const taskOption = event.target.closest(".simple-detail [data-task-option]");
   if (taskOption) {
     const taskRoot = taskOption.closest("[data-task-id]");
@@ -4049,6 +4274,19 @@ document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>
       ? item.tags.filter((candidate) => candidate !== tag)
       : [...(item.tags || []), tag].slice(0, 8);
     item.updatedAt = new Date().toISOString();
+    saveState();
+    return;
+  }
+
+  const planAction = event.target.closest("[data-simple-plan-action]");
+  if (planAction) {
+    const row = planAction.closest('[data-simple-object="task"]');
+    const item = state.tasks.find((candidate) => candidate.id === row?.dataset.taskId);
+    if (!item) return;
+    const target = planAction.dataset.simplePlanAction === "today" ? "today" : "inbox";
+    setTaskPlanBucket(item, target);
+    item.updatedAt = new Date().toISOString();
+    state.assistantActions.unshift(action(target === "today" ? "Задача добавлена в Сегодня" : "Задача возвращена во входящие", item.title, "confirmed"));
     saveState();
     return;
   }
@@ -4307,7 +4545,7 @@ document.addEventListener("click", (event) => {
     simpleSyncPanelOpen = false;
     renderSimpleApp();
   }
-  if (state.ui?.appearanceOpen && !event.target.closest("#simpleAppearanceMenu, #simpleAppearanceToggle")) {
+  if (state.ui?.appearanceOpen && !event.target.closest("#simpleAppearanceMenu, #simpleAppearanceToggle, #simpleMobileAppearanceToggle")) {
     state.ui.appearanceOpen = false;
     renderSimpleApp();
   }
@@ -4344,6 +4582,16 @@ document.querySelector("#simpleComposer")?.addEventListener("submit", async (eve
   }
   addSimpleComposerItem(text, meta);
   saveState();
+});
+
+document.querySelector("#simpleTaskQuickMeta")?.addEventListener("change", (event) => {
+  const field = event.target.closest("[data-quick-task-field]");
+  if (!field) return;
+  quickTaskDraft[field.dataset.quickTaskField] = field.value;
+  if (field.dataset.quickTaskField === "planBucket" && field.value === "today" && !quickTaskDraft.dueDate) {
+    quickTaskDraft.dueDate = todayIso;
+    renderSimpleTaskQuickMeta(simpleViewMeta());
+  }
 });
 
 document.querySelector("#simpleBackupInput")?.addEventListener("change", async (event) => {
@@ -4467,6 +4715,16 @@ document.querySelector("#simpleApp")?.addEventListener("submit", (event) => {
 });
 
 document.querySelector("#simpleApp")?.addEventListener("change", (event) => {
+  const inboxField = event.target.closest("[data-inbox-field]");
+  if (inboxField) {
+    const inboxRoot = inboxField.closest("[data-inbox-id]");
+    const item = state.inboxItems.find((candidate) => candidate.id === inboxRoot?.dataset.inboxId);
+    if (!item) return;
+    if (inboxField.dataset.inboxField === "title") item.parsed = { ...(item.parsed || {}), title: inboxField.value.trim() || item.text };
+    if (inboxField.dataset.inboxField === "text") item.text = inboxField.value;
+    saveState();
+    return;
+  }
   const projectField = event.target.closest("[data-project-field]");
   if (projectField) {
     const projectRoot = projectField.closest("[data-project-id]");
@@ -4557,6 +4815,17 @@ document.querySelector("#simpleApp")?.addEventListener("change", (event) => {
 });
 
 document.querySelector("#simpleApp")?.addEventListener("input", (event) => {
+  const inboxField = event.target.closest('[data-inbox-field="title"], [data-inbox-field="text"]');
+  if (inboxField) {
+    const inboxRoot = inboxField.closest("[data-inbox-id]");
+    const item = state.inboxItems.find((candidate) => candidate.id === inboxRoot?.dataset.inboxId);
+    if (!item) return;
+    if (inboxField.dataset.inboxField === "title") item.parsed = { ...(item.parsed || {}), title: inboxField.value };
+    if (inboxField.dataset.inboxField === "text") item.text = inboxField.value;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    queueCloudSave();
+    return;
+  }
   const decompositionField = event.target.closest("[data-decomposition-field]");
   if (decompositionField) {
     const stepId = decompositionField.closest("[data-decomposition-step-id]")?.dataset.decompositionStepId;
@@ -5210,9 +5479,47 @@ document.addEventListener("drop", (event) => {
 document.addEventListener("keydown", (event) => {
   const target = event.target;
   const isTyping = ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
-  if ((event.key === "/" && !isTyping) || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k")) {
+
+  if (event.key === "Escape" && clearPendingConfirmation()) {
     event.preventDefault();
-    document.querySelector("#simpleSearch")?.focus();
+    saveState();
+    return;
+  }
+
+  if (state.ui?.recordingShortcutAction) {
+    event.preventDefault();
+    if (event.key === "Escape") {
+      state.ui.recordingShortcutAction = "";
+      state.ui.shortcutError = "";
+      renderSimpleApp();
+      return;
+    }
+    const nextShortcut = shortcutFromEvent(event);
+    if (!nextShortcut || ["tab", "enter", "backspace", "delete"].includes(nextShortcut)) return;
+    if (reservedShortcuts.has(nextShortcut)) {
+      state.ui.shortcutError = "Это сочетание занято браузером.";
+      renderSimpleApp();
+      return;
+    }
+    const conflict = Object.entries(state.settings.shortcuts).find(([actionId, value]) => actionId !== state.ui.recordingShortcutAction && value === nextShortcut);
+    if (conflict) {
+      state.ui.shortcutError = `Сочетание уже используется: ${shortcutLabels[conflict[0]]}.`;
+      renderSimpleApp();
+      return;
+    }
+    state.settings.shortcuts[state.ui.recordingShortcutAction] = nextShortcut;
+    state.ui.recordingShortcutAction = "";
+    state.ui.shortcutError = "";
+    saveState();
+    return;
+  }
+
+  const pressedShortcut = shortcutFromEvent(event);
+  const shortcutAction = Object.entries(state.settings.shortcuts).find(([, value]) => value === pressedShortcut)?.[0];
+  if (shortcutAction && (!isTyping || shortcutAction === "search")) {
+    event.preventDefault();
+    runShortcutAction(shortcutAction);
+    return;
   }
   if (event.key === "Escape") {
     if (simpleSyncPanelOpen || state.ui?.appearanceOpen) {
@@ -5277,6 +5584,10 @@ window.addEventListener("storage", (event) => {
   if (event.key !== STORAGE_KEY || !event.newValue) return;
   state = normalizeState(JSON.parse(event.newValue));
   render();
+});
+
+window.matchMedia?.("(prefers-color-scheme: dark)")?.addEventListener?.("change", () => {
+  if (state.settings.appearanceMode === "system") renderSimpleApp();
 });
 
 render();

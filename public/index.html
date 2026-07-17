@@ -9,8 +9,8 @@
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="icon" href="/icon-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="stylesheet" href="/styles.css?v=154" />
-    <link rel="stylesheet" href="/task-core.css?v=154" />
+    <link rel="stylesheet" href="/styles.css?v=162" />
+    <link rel="stylesheet" href="/task-core.css?v=162" />
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.19/index.global.min.js"></script>
   </head>
   <body data-auth="checking">
@@ -80,11 +80,17 @@
             <img src="/icons/ellipsis.svg" alt="" />
           </button>
           <div class="simple-appearance-menu" id="simpleAppearanceMenu" hidden>
-            <span>Палитра</span>
+            <span>Режим</span>
             <div class="appearance-options">
-              <button type="button" data-appearance-theme="sage"><i class="appearance-swatch sage"></i>Sage</button>
-              <button type="button" data-appearance-theme="sky"><i class="appearance-swatch sky"></i>Sky</button>
-              <button type="button" data-appearance-theme="clay"><i class="appearance-swatch clay"></i>Clay</button>
+              <button type="button" data-appearance-mode="system">Система</button>
+              <button type="button" data-appearance-mode="light">Светлая</button>
+              <button type="button" data-appearance-mode="dark">Тёмная</button>
+            </div>
+            <span>Акцент</span>
+            <div class="appearance-options">
+              <button type="button" data-appearance-theme="sky"><i class="appearance-swatch sky"></i>Синий</button>
+              <button type="button" data-appearance-theme="sage"><i class="appearance-swatch sage"></i>Зелёный</button>
+              <button type="button" data-appearance-theme="clay"><i class="appearance-swatch clay"></i>Янтарный</button>
             </div>
             <span>Шрифт</span>
             <div class="appearance-options font-options">
@@ -92,6 +98,17 @@
               <button type="button" data-appearance-font="soft">Soft</button>
               <button type="button" data-appearance-font="editorial">Editorial</button>
             </div>
+            <span>Горячие клавиши</span>
+            <div class="shortcut-options" id="shortcutOptions">
+              <button type="button" data-shortcut-action="search"><span>Поиск</span><kbd></kbd></button>
+              <button type="button" data-shortcut-action="new"><span>Новая запись</span><kbd></kbd></button>
+              <button type="button" data-shortcut-action="today"><span>Сегодня</span><kbd></kbd></button>
+              <button type="button" data-shortcut-action="calendar"><span>Календарь</span><kbd></kbd></button>
+              <button type="button" data-shortcut-action="notes"><span>Заметки</span><kbd></kbd></button>
+              <button type="button" data-shortcut-action="focus"><span>Фокус</span><kbd></kbd></button>
+            </div>
+            <p class="shortcut-hint" id="shortcutHint">Нажми на команду, затем введи сочетание.</p>
+            <button class="shortcut-reset" id="shortcutReset" type="button">Сбросить сочетания</button>
           </div>
         </div>
         <nav class="simple-nav" id="simpleNav"></nav>
@@ -107,6 +124,9 @@
             <button class="simple-mobile-sync-toggle" id="simpleMobileSyncToggle" type="button" aria-label="Проверить синхронизацию" aria-expanded="false">
               <span class="simple-sync-dot" aria-hidden="true"></span>
             </button>
+            <button class="simple-mobile-appearance-toggle" id="simpleMobileAppearanceToggle" type="button" aria-label="Настроить приложение" aria-expanded="false">
+              <img src="/icons/ellipsis.svg" alt="" />
+            </button>
             <div class="simple-search-shell">
               <img src="/icons/search.svg" alt="" />
               <input id="simpleSearch" type="search" autocomplete="off" placeholder="Поиск" aria-label="Поиск по задачам и заметкам" />
@@ -120,6 +140,7 @@
         <form class="simple-composer" id="simpleComposer">
           <input id="simpleComposerInput" type="text" placeholder="+ Добавить задачу или заметку" />
           <button class="primary-button" type="submit">Добавить</button>
+          <div class="simple-task-quick-meta" id="simpleTaskQuickMeta" hidden></div>
         </form>
 
         <div class="simple-list" id="simpleList"></div>
@@ -131,6 +152,6 @@
       <div class="simple-toast-layer" id="simpleToastLayer" aria-live="polite"></div>
     </div>
 
-    <script src="/app.js?v=154" type="module"></script>
+    <script src="/app.js?v=162" type="module"></script>
   </body>
 </html>
