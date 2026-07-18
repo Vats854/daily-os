@@ -5540,6 +5540,7 @@ document.addEventListener("keydown", (event) => {
     renderSimpleSearchResults("");
     state.ui.selectedTaskId = null;
     state.ui.selectedNoteId = null;
+    state.ui.selectedInboxId = null;
     renderSimpleApp();
     document.querySelector("#globalSearch").value = "";
     renderSearchResults("");
