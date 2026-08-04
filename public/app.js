@@ -117,7 +117,7 @@ const journeyStages = [
   ["integration", "Интеграция", "возвращение"]
 ];
 
-const todayIso = new Date().toISOString().slice(0, 10);
+const todayIso = localDateIso(new Date());
 const dayMs = 24 * 60 * 60 * 1000;
 const taskStatuses = ["inbox", "backlog", "this_week", "today", "done"];
 const priorities = ["low", "medium", "high"];
@@ -164,7 +164,7 @@ const seedState = {
     autonomy: "maximum",
     activeView: "today",
     appearanceMode: "system",
-    appearanceTheme: "sage",
+    appearanceTheme: "sky",
     appearanceFont: "clean",
     shortcuts: { ...defaultShortcuts }
   },
@@ -325,6 +325,8 @@ let pendingImportPayload = null;
 let backupMessage = "";
 let undoSnapshot = null;
 let undoTimer = null;
+let inboxReceipt = null;
+let inboxReceiptTimer = null;
 let networkOffline = !navigator.onLine;
 let calendarInstance = null;
 let calendarTaskDraggable = null;
@@ -346,6 +348,9 @@ state.ui.listMenuId = "";
 state.ui.pendingDeleteTaskId = "";
 state.ui.pendingDeleteNoteId = "";
 state.ui.pendingDeleteNoteFolderId = "";
+state.ui.inboxDraft = state.ui.inboxDraft && typeof state.ui.inboxDraft === "object"
+  ? state.ui.inboxDraft
+  : null;
 state.ui.pendingDeleteListId = "";
 state.ui.taskMenuOpen = false;
 state.ui.taskMenuPosition = null;
@@ -516,7 +521,8 @@ function normalizeState(nextState) {
       nextState.settings.shortcuts[actionId] = defaultShortcuts[actionId];
     }
   });
-  if (!["sage", "sky", "clay"].includes(nextState.settings.appearanceTheme)) nextState.settings.appearanceTheme = "sage";
+  if (nextState.settings.appearanceTheme === "sage") nextState.settings.appearanceTheme = "sky";
+  if (!["sky", "indigo", "clay"].includes(nextState.settings.appearanceTheme)) nextState.settings.appearanceTheme = "sky";
   if (!["system", "light", "dark"].includes(nextState.settings.appearanceMode)) nextState.settings.appearanceMode = "system";
   if (!["clean", "soft", "editorial"].includes(nextState.settings.appearanceFont)) nextState.settings.appearanceFont = "clean";
   if (nextState.settings.activeView === "overview") nextState.settings.activeView = "projects";
@@ -848,9 +854,9 @@ async function recoverCloudConflict(localSnapshot, expectedRevision = cloudSync.
 }
 
 function updateAuthUi() {
-  const status = document.querySelector("#authStatus");
-  const authButton = document.querySelector("#authButton");
-  const signOutButton = document.querySelector("#signOutButton");
+  const status = document.querySelector("#authStatus") || document.querySelector("#simpleSyncStatus");
+  const authButton = document.querySelector("#authButton") || document.querySelector("#simpleAuthButton");
+  const signOutButton = document.querySelector("#signOutButton") || document.querySelector("#simpleSignOutButton");
   const gateButton = document.querySelector("#authGateButton");
   const gateStatus = document.querySelector("#authGateStatus");
   if (!status || !authButton || !signOutButton || !gateButton || !gateStatus) return;
@@ -1179,13 +1185,12 @@ async function classifyInboxWithAi(text) {
 }
 
 async function processInbox(text) {
-  const aiResult = await classifyInboxWithAi(text);
-  const parsed = aiResult.parsed;
+  const parsed = normalizeInboxParsed(classifyInbox(text), text);
   const inboxItem = {
     id: crypto.randomUUID(),
     text,
     parsed,
-    status: parsed.needsReview ? "needs_review" : "open",
+    status: "open",
     linkedType: "",
     linkedId: "",
     createdAt: new Date().toISOString()
@@ -1198,9 +1203,26 @@ async function processInbox(text) {
 
   state.assistantActions.unshift(
     action(
-      `Входящее классифицировано: ${inboxKindLabel(parsed.kind)}`,
-      parsed.reason || `Определено как ${inboxKindLabel(parsed.kind).toLowerCase()}, список: ${listLabel(parsed.area)}.`,
-      parsed.needsReview ? "needs_review" : "needs_confirmation"
+      "Входящее сохранено",
+      "Запись уже доступна для разбора; ассистент уточняет тип и список в фоне.",
+      "needs_confirmation"
+    )
+  );
+
+  saveState();
+
+  const aiResult = await classifyInboxWithAi(text);
+  const currentItem = state.inboxItems.find((item) => item.id === inboxItem.id);
+  if (!currentItem || currentItem.linkedId) return currentItem || inboxItem;
+
+  currentItem.parsed = aiResult.parsed;
+  currentItem.status = aiResult.parsed.needsReview ? "needs_review" : "open";
+  if (state.ui?.inboxDraft?.itemId === currentItem.id) state.ui.inboxDraft = null;
+  state.assistantActions.unshift(
+    action(
+      `Входящее классифицировано: ${inboxKindLabel(aiResult.parsed.kind)}`,
+      aiResult.parsed.reason || `Определено как ${inboxKindLabel(aiResult.parsed.kind).toLowerCase()}, список: ${listLabel(aiResult.parsed.area)}.`,
+      aiResult.parsed.needsReview ? "needs_review" : "needs_confirmation"
     )
   );
 
@@ -1215,7 +1237,7 @@ async function processInbox(text) {
   }
 
   saveState();
-  return inboxItem;
+  return currentItem;
 }
 
 function processEveningReview(text) {
@@ -1950,7 +1972,7 @@ function createTaskFromInbox(item, status = "backlog") {
   return newTask;
 }
 
-function saveInboxAsNote(item) {
+function saveInboxAsNote(item, folderId = "") {
   if (!item) return null;
   const existing = item.linkedType === "note" ? getInboxLinkedObject(item) : null;
   if (existing) return existing;
@@ -1961,7 +1983,7 @@ function saveInboxAsNote(item) {
     sourceInboxId: item.id,
     type: item.parsed?.kind || "note",
     area,
-    folderId: noteFolderForArea(area),
+    folderId: noteFolders().some((folder) => folder.id === folderId) ? folderId : noteFolderForArea(area),
     title: item.parsed?.title || item.text.split("\n")[0].slice(0, 90) || "Без названия",
     text: item.text,
     tags: [],
@@ -2013,6 +2035,7 @@ function deleteInboxItem(item) {
   if (!item) return;
   state.inboxItems = state.inboxItems.filter((candidate) => candidate.id !== item.id);
   if (state.ui?.selectedInboxId === item.id) state.ui.selectedInboxId = state.inboxItems[0]?.id || null;
+  if (state.ui?.inboxDraft?.itemId === item.id) state.ui.inboxDraft = null;
   state.assistantActions.unshift(action("Входящее удалено", item.parsed?.title || item.text, "confirmed"));
 }
 
@@ -2020,13 +2043,61 @@ function handleInboxAction(actionName, item) {
   if (!item) return false;
   state.ui = state.ui || {};
   state.ui.selectedInboxId = item.id;
-  if (actionName === "task-today") createTaskFromInbox(item, "today");
-  if (actionName === "convert-to-task") createTaskFromInbox(item, "today");
-  if (actionName === "task-backlog") createTaskFromInbox(item, "backlog");
-  if (actionName === "note") saveInboxAsNote(item);
+  const draft = inboxTriageDraft(item);
+  let created = null;
+  if (actionName === "task-today") created = createTaskFromInbox(item, "today");
+  if (actionName === "convert-to-task") created = createTaskFromInbox(item, "today");
+  if (actionName === "task-backlog") created = createTaskFromInbox(item, "backlog");
+  if (actionName === "note") created = saveInboxAsNote(item);
+  if (actionName === "create-task") {
+    item.parsed = item.parsed || {};
+    item.parsed.area = taskListIds().includes(draft.area) ? draft.area : item.parsed.area || "personal";
+    created = createTaskFromInbox(item, draft.taskBucket === "backlog" ? "backlog" : "today");
+  }
+  if (actionName === "create-note") created = saveInboxAsNote(item, draft.folderId);
   if (actionName === "open-linked") openInboxLinkedObject(item);
   if (actionName === "delete") deleteInboxItem(item);
+  if (created) {
+    stageInboxReceipt(item, created);
+    state.ui.inboxDraft = null;
+    state.ui.selectedInboxId = null;
+    state.ui.selectedTaskId = null;
+    state.ui.selectedNoteId = null;
+  }
   return true;
+}
+
+function inboxTriageDraft(item) {
+  state.ui = state.ui || {};
+  const current = state.ui.inboxDraft;
+  if (current?.itemId === item.id) return current;
+  const area = taskListIds().includes(item.parsed?.area) ? item.parsed.area : "personal";
+  const suggestedNoteKinds = new Set(["note", "idea", "health_signal", "context"]);
+  state.ui.inboxDraft = {
+    itemId: item.id,
+    type: suggestedNoteKinds.has(item.parsed?.kind) ? "note" : "task",
+    taskBucket: "today",
+    area,
+    folderId: noteFolderForArea(area)
+  };
+  return state.ui.inboxDraft;
+}
+
+function stageInboxReceipt(item, linked) {
+  if (!item || !linked) return;
+  window.clearTimeout(inboxReceiptTimer);
+  inboxReceipt = {
+    sourceInboxId: item.id,
+    linkedType: item.linkedType,
+    linkedId: item.linkedId,
+    title: linked.title || item.parsed?.title || item.text,
+    destination: inboxDestinationLabel(item, linked)
+  };
+  inboxReceiptTimer = window.setTimeout(() => {
+    inboxReceipt = null;
+    inboxReceiptTimer = null;
+    renderSimpleApp();
+  }, 6500);
 }
 
 function suggestCategoryForInbox(item) {
@@ -2067,7 +2138,7 @@ function simpleViewMeta() {
     };
   }
   return {
-    today: { title: "Сегодня", subtitle: "Задачи, которые реально в работе сегодня.", kind: "tasks", status: "today" },
+    today: { title: "Сегодня", subtitle: "Принятый план дня: фокус, время и задачи без слота.", kind: "tasks", status: "today" },
     week: { title: "Следующие 7 дней", subtitle: "Пул недели без календарного шума.", kind: "tasks", status: "this_week" },
     all: { title: "Все задачи", subtitle: "Единый список задач независимо от горизонта планирования.", kind: "all_tasks" },
     board: { title: "Канбан", subtitle: "Рабочий этап задач: не начато, в работе или готово.", kind: "kanban" },
@@ -2145,6 +2216,7 @@ function setSimpleModule(module) {
   if (!simpleModules.has(module)) return;
   const previousModule = currentSimpleModule();
   if (previousModule === "tasks" && simpleTaskViews.has(state.settings.activeView)) {
+    if (state.settings.activeView !== "board") state.ui.lastListView = state.settings.activeView;
     state.ui.lastTaskView = state.settings.activeView;
   }
   state.ui.simpleModule = module;
@@ -2363,9 +2435,10 @@ function renderSimpleApp() {
   const hasSelectedDetail = module === "notes"
     ? state.notes.some((item) => item.id === state.ui?.selectedNoteId)
     : module === "capture"
-      ? state.inboxItems.some((item) => item.id === state.ui?.selectedInboxId)
+      ? activeInboxItems().some((item) => item.id === state.ui?.selectedInboxId)
     : module === "tasks"
       ? state.tasks.some((item) => item.id === state.ui?.selectedTaskId)
+        || (state.settings.activeView === "today" && state.dailyPlan.timeBlocks.some((item) => item.id === state.ui?.selectedCalendarBlockId))
       : module === "habits"
         ? state.habits.some((item) => item.id === state.ui?.selectedHabitId)
       : module === "calendar" && state.dailyPlan.timeBlocks.some((item) => item.id === state.ui?.selectedCalendarBlockId);
@@ -2382,6 +2455,7 @@ function renderSimpleApp() {
   const appearanceMenu = document.querySelector("#simpleAppearanceMenu");
   const appearanceToggle = document.querySelector("#simpleAppearanceToggle");
   const mobileAppearanceToggle = document.querySelector("#simpleMobileAppearanceToggle");
+  root.classList.toggle("appearance-open", Boolean(state.ui.appearanceOpen));
   appearanceMenu.hidden = !state.ui.appearanceOpen;
   appearanceToggle.setAttribute("aria-expanded", state.ui.appearanceOpen ? "true" : "false");
   mobileAppearanceToggle?.setAttribute("aria-expanded", state.ui.appearanceOpen ? "true" : "false");
@@ -2552,6 +2626,13 @@ function renderSimpleToasts() {
   if (undoSnapshot && undoSnapshot.expiresAt >= Date.now()) {
     return `<section class="simple-toast undo-toast" role="status"><div><span class="label">Изменение сохранено</span><strong>${escapeHtml(undoSnapshot.label)}</strong></div><div class="confirm-actions"><button class="primary-button" type="button" data-simple-undo>Отменить</button></div></section>`;
   }
+  if (inboxReceipt) {
+    const objectLabel = inboxReceipt.linkedType === "note" ? "Заметка создана" : "Задача создана";
+    return `<section class="simple-toast inbox-receipt-toast" role="status">
+      <div><span class="label">${escapeHtml(objectLabel)}</span><strong>${escapeHtml(inboxReceipt.title)}</strong><p>${escapeHtml(inboxReceipt.destination)}</p></div>
+      <div class="confirm-actions"><button class="secondary-button" type="button" data-inbox-receipt-action="close">Закрыть</button><button class="primary-button" type="button" data-inbox-receipt-action="open">Открыть</button></div>
+    </section>`;
+  }
   if (networkOffline) {
     return `<section class="simple-toast offline-toast" role="status"><div><span class="label">Нет сети</span><strong>Работа продолжается на этом устройстве</strong><p>Изменения сохраняются локально и отправятся в облако после восстановления связи.</p></div></section>`;
   }
@@ -2669,7 +2750,7 @@ function renderCalendarWorkspace() {
     <section class="calendar-unscheduled" aria-label="Задачи без времени">
       <div><span class="label">Без времени</span><small>${unscheduled.length} задач</small></div>
       <div class="calendar-task-lane">${unscheduled.length
-        ? unscheduled.slice(0, 8).map((item) => `<button type="button" data-calendar-task-id="${escapeHtml(item.id)}" title="${escapeHtml(item.title)}"><span class="calendar-task-dot ${escapeHtml(taskLists().find((list) => list.id === item.area)?.tone || "blue")}"></span>${escapeHtml(item.title)}</button>`).join("")
+        ? unscheduled.slice(0, 8).map((item) => `<button type="button" data-calendar-task-id="${escapeHtml(item.id)}" title="${escapeHtml(item.title)}"><span class="calendar-task-dot ${escapeHtml(taskLists().find((list) => list.id === item.area)?.tone || "blue")}"></span><span class="calendar-task-title">${escapeHtml(item.title)}</span></button>`).join("")
         : `<span class="calendar-lane-empty">Все задачи уже имеют место или не приняты в неделю.</span>`}</div>
     </section>
     ${window.FullCalendar?.Calendar && !calendarEngineFailed ? `<div class="calendar-engine-shell"><div id="calendarEngine"></div></div>` : `<div class="calendar-scroll">
@@ -3117,12 +3198,105 @@ function renderTaskKanban() {
   </section>`;
 }
 
+function todayAcceptedBlocks() {
+  const day = new Date(`${todayIso}T12:00:00`);
+  return state.dailyPlan.timeBlocks
+    .filter((block) => calendarBlockOccurrenceDates(block, [day]).length)
+    .sort((a, b) => timeMinutes(a.start) - timeMinutes(b.start) || timeMinutes(a.end) - timeMinutes(b.end));
+}
+
+function todayBlockState(block, index, blocks) {
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const start = timeMinutes(block.start);
+  const end = timeMinutes(block.end);
+  if (nowMinutes >= start && nowMinutes < end) return { className: "current", label: "Сейчас" };
+  if (nowMinutes < start && !blocks.slice(0, index).some((item) => timeMinutes(item.start) > nowMinutes)) {
+    return { className: "next", label: "Дальше" };
+  }
+  if (nowMinutes >= end) return { className: "past", label: "Прошло" };
+  return { className: "", label: "" };
+}
+
+function renderTodayBlock(block, index, blocks) {
+  const linkedTask = state.tasks.find((item) => item.id === block.taskId) || null;
+  const timing = todayBlockState(block, index, blocks);
+  const selected = state.ui?.selectedCalendarBlockId === block.id;
+  return `<article class="today-time-block ${timing.className} ${selected ? "active" : ""}" data-today-block="${escapeHtml(block.id)}">
+    <button type="button" class="today-block-open" data-today-action="select-block" data-block-id="${escapeHtml(block.id)}">
+      <span class="today-block-time"><strong>${escapeHtml(block.start)}</strong><small>${escapeHtml(block.end)}</small></span>
+      <span class="today-block-copy">
+        <span class="today-block-kicker">${timing.label ? `<em>${escapeHtml(timing.label)}</em>` : ""}${escapeHtml(block.status === "draft" ? "Черновик" : "Принято")}</span>
+        <strong>${escapeHtml(block.title)}</strong>
+        ${block.nextAction ? `<small>${escapeHtml(block.nextAction)}</small>` : ""}
+      </span>
+    </button>
+    ${linkedTask ? `<button type="button" class="today-linked-task ${linkedTask.workflowStatus === "done" ? "done" : ""}" data-today-task-id="${escapeHtml(linkedTask.id)}"><span class="task-toggle ${linkedTask.workflowStatus === "done" ? "done" : ""}" aria-hidden="true"></span><span><strong>${escapeHtml(linkedTask.title)}</strong><small>${escapeHtml(listLabel(linkedTask.area))} · ${linkedTask.estimate} мин</small></span></button>` : `<span class="today-block-unlinked">Без связанной задачи</span>`}
+  </article>`;
+}
+
+function renderTodayWorkspace() {
+  const blocks = todayAcceptedBlocks();
+  const linkedTaskIds = new Set(blocks.map((block) => block.taskId).filter(Boolean));
+  const sections = getTodayTaskSections(state.tasks, { today: todayIso });
+  const todayTasks = [...sections.overdue, ...sections.timed, ...sections.remaining];
+  const unscheduled = todayTasks.filter((item) => !linkedTaskIds.has(item.id));
+  const completedCount = todayTasks.filter((item) => item.workflowStatus === "done").length;
+  const hasBlocks = blocks.length > 0;
+  const hasUnscheduled = unscheduled.length > 0;
+  const layoutClass = hasBlocks && hasUnscheduled
+    ? "has-both"
+    : hasBlocks
+      ? "has-blocks-only"
+      : hasUnscheduled
+        ? "has-tasks-only"
+        : "is-empty";
+  const dateLabel = new Intl.DateTimeFormat("ru-RU", { weekday: "long", day: "numeric", month: "long" }).format(new Date(`${todayIso}T12:00:00`));
+
+  return `<section class="today-plan-workbench ${layoutClass}" aria-label="Принятый план дня">
+    <header class="today-focus-line">
+      <span class="today-focus-label">Фокус дня</span>
+      <input data-daily-plan-field="focus" value="${escapeHtml(state.dailyPlan.focus || "")}" placeholder="Какой один результат определит этот день?" aria-label="Фокус дня" />
+      <div class="today-plan-meta"><span>${escapeHtml(dateLabel)}</span><span>${blocks.length} ${russianPlural(blocks.length, "блок", "блока", "блоков")}</span><span>${todayTasks.length - completedCount} в работе</span></div>
+    </header>
+
+    ${!hasBlocks && !hasUnscheduled ? `<section class="today-zero-state">
+      <span>План пока пуст</span>
+      <strong>Начни с одной задачи или поставь первый блок времени.</strong>
+      <div>
+        <button type="button" data-today-action="add-block"><img src="/icons/calendar-days.svg" alt="" />Добавить блок</button>
+      </div>
+    </section>` : ""}
+
+    ${hasBlocks ? `<section class="today-timeline" aria-label="Временные блоки">
+      <header class="today-section-head">
+        <div><span>План по времени</span><small>Принятые обязательства дня</small></div>
+        <button type="button" data-today-action="add-block"><img src="/icons/calendar-days.svg" alt="" />Добавить блок</button>
+      </header>
+      <div class="today-timeline-list">
+        ${blocks.map((block, index) => renderTodayBlock(block, index, blocks)).join("")}
+      </div>
+    </section>` : ""}
+
+    ${hasUnscheduled ? `<section class="today-unscheduled" aria-label="Задачи без блока">
+      <header class="today-section-head">
+        <div><span>Без времени</span><small>Задачи приняты на сегодня, но ещё не получили слот</small></div>
+        <strong>${unscheduled.length}</strong>
+      </header>
+      <div class="today-unscheduled-list">${unscheduled.map(renderSimpleTaskRow).join("")}</div>
+    </section>` : ""}
+
+    <details class="today-evening-review" ${state.dailyPlan.reviewSummary ? "open" : ""}>
+      <summary><span>Подвести итоги дня</span><small>Завершённое, переносы и одно изменение на завтра</small></summary>
+      <textarea data-daily-plan-field="reviewSummary" rows="2" placeholder="Что завершено, что переносится и почему?">${escapeHtml(state.dailyPlan.reviewSummary || "")}</textarea>
+    </details>
+  </section>`;
+}
+
 function renderSimpleMainList(meta) {
   if (meta.kind === "notes") {
     const notes = visibleNotes();
-    return notes.length
-      ? notes.map(renderSimpleNoteRow).join("")
-      : `<div class="simple-empty">В этой папке пока нет заметок. Создай документ сверху.</div>`;
+    return renderSimpleNotesLibrary(notes);
   }
   if (meta.kind === "inbox") {
     const items = activeInboxItems();
@@ -3148,18 +3322,13 @@ function renderSimpleMainList(meta) {
   if (meta.kind === "log") {
     return renderSimpleLogWorkspace();
   }
-  if (meta.kind === "kanban") return renderTaskKanban();
+  if (meta.kind === "kanban") {
+    const activeCount = state.tasks.filter((item) => item.workflowStatus !== "done").length;
+    return renderTaskWorkspace(renderTaskKanban(), meta, activeCount);
+  }
 
   if (meta.kind === "tasks" && meta.status === "today") {
-    const sections = getTodayTaskSections(state.tasks, { today: todayIso });
-    const sectionMarkup = [
-      ["overdue", "Просрочено", sections.overdue],
-      ["timed", "По времени", sections.timed],
-      ["remaining", "Остальное на сегодня", sections.remaining]
-    ].filter(([, , items]) => items.length)
-      .map(([kind, title, items]) => `<section class="simple-task-section ${kind}" aria-label="${escapeHtml(title)}"><header><span>${escapeHtml(title)}</span><strong>${items.length}</strong></header>${items.map(renderSimpleTaskRow).join("")}</section>`)
-      .join("");
-    return sectionMarkup || `<div class="simple-empty"><strong>Сегодня свободно</strong><span>Назначь задачу на сегодня или поставь ей сегодняшнюю дату.</span></div>`;
+    return renderTodayWorkspace();
   }
 
   let tasks = state.tasks.filter((item) => item.workflowStatus !== "done");
@@ -3167,9 +3336,23 @@ function renderSimpleMainList(meta) {
   if (meta.kind === "done_tasks") tasks = state.tasks.filter((item) => item.workflowStatus === "done");
   if (meta.kind === "area") tasks = state.tasks.filter((item) => item.area === meta.area && item.workflowStatus !== "done");
   tasks = [...tasks].sort(compareTaskManualOrder);
-  return tasks.length
+  return renderTaskWorkspace(tasks.length
     ? tasks.map(renderSimpleTaskRow).join("")
-    : `<div class="simple-empty">Задач нет. Добавь первую сверху.</div>`;
+    : `<div class="simple-empty">Задач нет. Добавь первую сверху.</div>`, meta, tasks.length);
+}
+
+function renderTaskWorkspace(content, meta, visibleCount = 0) {
+  const boardActive = meta.kind === "kanban";
+  return `<section class="task-workspace" aria-label="Рабочая область задач">
+    <div class="task-workspace-toolbar" aria-label="Вид задач">
+      <div class="task-view-switcher" role="tablist" aria-label="Представление задач">
+        <button type="button" role="tab" aria-selected="${!boardActive}" class="${!boardActive ? "active" : ""}" data-simple-view="${escapeHtml(state.ui?.lastListView || (state.settings.activeView === "board" ? "today" : state.settings.activeView || "today"))}"><img src="/icons/list-todo.svg" alt="" />Список</button>
+        <button type="button" role="tab" aria-selected="${boardActive}" class="${boardActive ? "active" : ""}" data-simple-view="board"><img src="/icons/diamond.svg" alt="" />Канбан</button>
+      </div>
+      <span class="task-workspace-count"><strong>${visibleCount}</strong> ${russianPlural(visibleCount, "задача", "задачи", "задач")}</span>
+    </div>
+    <div class="task-workspace-content ${boardActive ? "board" : "list"}">${content}</div>
+  </section>`;
 }
 
 function renderSimpleTaskRow(item) {
@@ -3260,32 +3443,54 @@ function noteBody(item) {
   return text.trim() === noteTitle(item).trim() ? "" : text;
 }
 
+function noteUpdatedLabel(item) {
+  const value = item?.updatedAt || item?.createdAt;
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return "Недавно";
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const sameDay = (left, right) => left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth()
+    && left.getDate() === right.getDate();
+  const time = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(date);
+  if (sameDay(date, today)) return `Сегодня, ${time}`;
+  if (sameDay(date, yesterday)) return `Вчера, ${time}`;
+  return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" }).format(date);
+}
+
+function renderSimpleNotesLibrary(notes) {
+  const selectedFolder = state.ui?.selectedNoteFolderId;
+  const folderTitle = selectedFolder === "unfiled"
+    ? "Без папки"
+    : noteFolders().find((folder) => folder.id === selectedFolder)?.title || "Все заметки";
+  const body = notes.length
+    ? notes.map(renderSimpleNoteRow).join("")
+    : `<div class="simple-empty simple-notes-empty"><strong>Здесь пока тихо</strong><span>Создай первую заметку в этой папке — она сразу откроется справа.</span></div>`;
+  return `<section class="simple-notes-library" aria-label="Библиотека заметок">
+    <header class="simple-notes-library-head"><div><span>${escapeHtml(folderTitle)}</span><small>Последние изменения</small></div><strong>${notes.length}</strong></header>
+    <div class="simple-notes-index">${body}</div>
+  </section>`;
+}
+
 function renderSimpleNoteRow(item) {
   return `<article class="simple-row ${state.ui?.selectedNoteId === item.id ? "active" : ""}" data-note-id="${escapeHtml(item.id)}" data-simple-object="note">
-    <div>
+    <div class="simple-note-index-copy">
       <span>${escapeHtml(noteTitle(item))}</span>
-      <small>${escapeHtml(notePreview(item))}</small>
-      <small class="simple-note-list-label">${escapeHtml(noteFolderLabel(item.folderId))} · ${escapeHtml(new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short" }).format(new Date(item.updatedAt || item.createdAt)))}</small>
+      <small class="simple-note-preview">${escapeHtml(notePreview(item))}</small>
+      <small class="simple-note-list-label"><span>${escapeHtml(noteFolderLabel(item.folderId))}</span><time>${escapeHtml(noteUpdatedLabel(item))}</time></small>
     </div>
     <button type="button" class="simple-more" data-simple-action="select-note" aria-label="Открыть заметку"><img src="/icons/notebook-pen.svg" alt="" /></button>
   </article>`;
 }
 
 function renderSimpleInboxRow(item) {
-  const linked = getInboxLinkedObject(item);
   const kindLabel = inboxKindLabel(item.parsed?.kind || "note");
-  const openLabel = item.linkedType === "task" ? "Открыть задачу" : item.linkedType === "note" ? "Открыть заметку" : "Открыть";
-  const area = item.parsed?.area || "personal";
-  const taskDestination = listLabel(area);
-  const noteDestination = noteFolderLabel(noteFolderForArea(area));
   return `<article class="simple-inbox-row ${item.status === "needs_review" ? "needs-review" : ""} ${state.ui?.selectedInboxId === item.id ? "active" : ""}" data-inbox-id="${escapeHtml(item.id)}">
     <div class="simple-inbox-state"><span>${escapeHtml(inboxStatusLabel(item.status))}</span><small>${escapeHtml(kindLabel)}</small></div>
-    <button type="button" class="simple-inbox-copy" data-simple-action="select-inbox" aria-label="Открыть входящую запись"><strong>${escapeHtml(item.parsed?.title || item.text)}</strong><p>${escapeHtml(item.text)}</p>${linked ? `<small>${escapeHtml(inboxLinkedTypeLabel(item))} · ${escapeHtml(inboxDestinationLabel(item, linked))}</small>` : `<small class="simple-inbox-pending">Открой запись или сразу выбери, куда её сохранить.</small>`}</button>
+    <button type="button" class="simple-inbox-copy" data-simple-action="select-inbox" aria-label="Открыть входящую запись"><strong>${escapeHtml(item.parsed?.title || item.text)}</strong><p>${escapeHtml(item.text)}</p><small class="simple-inbox-pending">Нужно решить: задача или заметка.</small></button>
     <div class="simple-inbox-actions">
-      ${linked ? `<button type="button" class="primary" data-inbox-action="open-linked">${openLabel}</button>` : ""}
-      ${linked && item.linkedType === "note" ? `<button type="button" data-inbox-action="convert-to-task">Сделать задачей</button>` : ""}
-      ${!linked ? `<button type="button" class="primary" data-inbox-action="task-today"><span>Сегодня</span><small>${escapeHtml(taskDestination)}</small></button><button type="button" data-inbox-action="task-backlog"><span>В бэклог</span><small>${escapeHtml(taskDestination)}</small></button><button type="button" data-inbox-action="note"><span>Заметка</span><small>${escapeHtml(noteDestination)}</small></button>` : ""}
-      <button type="button" class="danger-text" data-inbox-action="delete">Удалить</button>
+      <button type="button" data-simple-action="select-inbox">Открыть</button>
     </div>
   </article>`;
 }
@@ -3293,14 +3498,34 @@ function renderSimpleInboxRow(item) {
 function renderSimpleHabitRow(item) {
   const done = Boolean(item.completions?.[todayIso]);
   const dots = lastSevenDates()
-    .map((date) => `<span class="simple-habit-dot ${item.completions?.[date] ? "done" : ""} ${date === todayIso ? "today" : ""}" title="${escapeHtml(date)}"></span>`)
+    .map((date) => `<span class="simple-habit-dot ${item.completions?.[date] ? "done" : ""} ${date === todayIso ? "today" : ""}" title="${escapeHtml(formatHabitDate(date))}"></span>`)
     .join("");
   const streakLabel = `${item.streak} ${russianPlural(item.streak, "день", "дня", "дней")}`;
   return `<article class="simple-row simple-habit-row ${state.ui?.selectedHabitId === item.id ? "active" : ""}" data-habit-id="${escapeHtml(item.id)}" data-simple-object="habit">
     <button type="button" class="task-toggle ${done ? "done" : ""}" data-action="toggle-habit" title="Отметить"></button>
-    <div><span>${escapeHtml(item.title)}</span><small>${escapeHtml(listLabel(item.area))} · серия ${escapeHtml(streakLabel)}</small></div>
-    <div class="simple-habit-controls"><span>${escapeHtml(habitGroupLabels[item.group])}</span><div class="simple-habit-week" aria-label="Последние семь дней">${dots}</div></div>
+    <div class="simple-habit-copy">
+      <span class="simple-habit-title">${escapeHtml(item.title)}</span>
+      <small class="simple-habit-meta"><span>${escapeHtml(listLabel(item.area))}</span><b>Серия ${escapeHtml(streakLabel)}</b></small>
+    </div>
+    <div class="simple-habit-week" aria-label="Последние семь дней">${dots}</div>
   </article>`;
+}
+
+function formatHabitDate(dateIso) {
+  return new Intl.DateTimeFormat("ru-RU", { weekday: "short", day: "numeric", month: "short" })
+    .format(new Date(`${dateIso}T12:00:00`));
+}
+
+function renderHabitWeekHeader(dates) {
+  const weekdayFormatter = new Intl.DateTimeFormat("ru-RU", { weekday: "short" });
+  return `<div class="simple-habit-week-head" aria-label="Последние семь дней">
+    <div><span>Ритм недели</span><small>Отмечай сегодняшний день слева</small></div>
+    <div>${dates.map((date) => {
+      const parsed = new Date(`${date}T12:00:00`);
+      const weekday = weekdayFormatter.format(parsed).replace(".", "");
+      return `<span class="${date === todayIso ? "today" : ""}"><small>${escapeHtml(weekday)}</small><strong>${parsed.getDate()}</strong></span>`;
+    }).join("")}</div>
+  </div>`;
 }
 
 function russianPlural(value, one, few, many) {
@@ -3314,15 +3539,20 @@ function russianPlural(value, one, few, many) {
 
 function renderSimpleHabitGroups() {
   const todayWeekday = new Date(`${todayIso}T12:00:00`).getDay();
+  const dates = lastSevenDates();
   const activeHabits = state.habits.filter((item) => !item.archived && item.weekdays.includes(todayWeekday));
   const archivedHabits = state.habits.filter((item) => item.archived);
   const completed = activeHabits.filter((item) => item.completions?.[todayIso]).length;
   const score = activeHabits.length ? Math.round((completed / activeHabits.length) * 100) : 0;
-  return `<div class="simple-habits-summary"><div><span class="label">Сегодня</span><strong>${completed}/${activeHabits.length}</strong></div><div class="simple-habits-progress"><i style="width:${score}%"></i></div><span>${score}%</span></div>
+  return `<div class="simple-habits-overview">
+      <div><span class="label">Сегодня</span><strong>${completed}<small> из ${activeHabits.length}</small></strong></div>
+      <div><span>${score}% выполнено</span><div class="simple-habits-progress"><i style="width:${score}%"></i></div></div>
+    </div>
+    ${renderHabitWeekHeader(dates)}
     ${habitGroups.map((group) => {
       const habits = activeHabits.filter((item) => item.group === group);
       if (!habits.length) return "";
-      return `<section class="simple-habit-group"><header><span>${escapeHtml(habitGroupLabels[group])}</span><strong>${habits.length}</strong></header>${habits.map(renderSimpleHabitRow).join("")}</section>`;
+      return `<section class="simple-habit-group ${escapeHtml(group)}"><header><span>${escapeHtml(habitGroupLabels[group])}</span><strong>${habits.length}</strong></header><div>${habits.map(renderSimpleHabitRow).join("")}</div></section>`;
     }).join("")}
     ${!activeHabits.length ? `<div class="simple-empty-state"><strong>На сегодня привычек нет</strong><span>Создай привычку или включи сегодняшний день в её расписании.</span></div>` : ""}
     ${archivedHabits.length ? `<details class="simple-habit-archive"><summary>Архив <span>${archivedHabits.length}</span></summary>${archivedHabits.map((item) => `<article class="simple-row" data-habit-id="${escapeHtml(item.id)}" data-simple-object="habit"><div><span>${escapeHtml(item.title)}</span><small>${escapeHtml(listLabel(item.area))}</small></div><button type="button" data-simple-action="restore-habit">Вернуть</button></article>`).join("")}</details>` : ""}`;
@@ -3331,11 +3561,19 @@ function renderSimpleHabitGroups() {
 function renderSimpleDetail(meta) {
   const module = currentSimpleModule();
   const inboxItem = module === "capture"
-    ? state.inboxItems.find((item) => item.id === state.ui?.selectedInboxId) || null
+    ? activeInboxItems().find((item) => item.id === state.ui?.selectedInboxId) || null
     : null;
   if (inboxItem) {
     const linked = getInboxLinkedObject(inboxItem);
     const area = inboxItem.parsed?.area || "personal";
+    const draft = inboxTriageDraft(inboxItem);
+    const taskMode = draft.type !== "note";
+    const taskListOptions = taskLists()
+      .map((list) => `<option value="${escapeHtml(list.id)}" ${draft.area === list.id ? "selected" : ""}>${escapeHtml(list.title)}</option>`)
+      .join("");
+    const noteFolderOptions = noteFolders()
+      .map((folder) => `<option value="${escapeHtml(folder.id)}" ${draft.folderId === folder.id ? "selected" : ""}>${escapeHtml(folder.title)}</option>`)
+      .join("");
     return `<section class="simple-detail-card simple-inbox-editor" data-inbox-id="${escapeHtml(inboxItem.id)}">
       <div class="simple-detail-head">
         <span class="label">Входящая запись</span>
@@ -3343,7 +3581,25 @@ function renderSimpleDetail(meta) {
       </div>
       <label><span>Заголовок</span><input class="simple-title-input" data-inbox-field="title" value="${escapeHtml(inboxItem.parsed?.title || inboxItem.text)}" /></label>
       <label><span>Исходный текст</span><textarea class="simple-description-input" data-inbox-field="text" placeholder="Мысль, задача, идея или контекст">${escapeHtml(inboxItem.text)}</textarea></label>
-      ${linked ? `<div class="simple-inbox-editor-result"><span>Уже сохранено</span><strong>${escapeHtml(inboxLinkedTypeLabel(inboxItem))} · ${escapeHtml(inboxDestinationLabel(inboxItem, linked))}</strong><button type="button" class="primary" data-inbox-action="open-linked">Открыть</button></div>` : `<div class="simple-inbox-editor-outcomes"><span class="label">Куда сохранить</span><p>Выбор создаст объект. Без выбора запись останется во Входящих.</p><div><button type="button" class="primary" data-inbox-action="task-today"><strong>Задача сегодня</strong><small>${escapeHtml(listLabel(area))}</small></button><button type="button" data-inbox-action="task-backlog"><strong>Задача в бэклог</strong><small>${escapeHtml(listLabel(area))}</small></button><button type="button" data-inbox-action="note"><strong>Заметка</strong><small>${escapeHtml(noteFolderLabel(noteFolderForArea(area)))}</small></button></div></div>`}
+      ${linked ? `<div class="simple-inbox-editor-result"><span>Уже сохранено</span><strong>${escapeHtml(inboxLinkedTypeLabel(inboxItem))} · ${escapeHtml(inboxDestinationLabel(inboxItem, linked))}</strong><button type="button" class="primary" data-inbox-action="open-linked">Открыть</button></div>` : `<div class="simple-inbox-triage">
+        <div class="simple-inbox-triage-head"><span class="label">Создать</span><p>Сначала выбери тип объекта, затем его место.</p></div>
+        <div class="simple-inbox-type-switch" role="tablist" aria-label="Тип результата">
+          <button type="button" role="tab" aria-selected="${taskMode}" class="${taskMode ? "active" : ""}" data-inbox-choice="type" data-value="task"><strong>Задача</strong><small>Нужно выполнить</small></button>
+          <button type="button" role="tab" aria-selected="${!taskMode}" class="${!taskMode ? "active" : ""}" data-inbox-choice="type" data-value="note"><strong>Заметка</strong><small>Нужно сохранить</small></button>
+        </div>
+        ${taskMode ? `<div class="simple-inbox-destination">
+          <label><span>Список</span><select data-inbox-triage-field="area">${taskListOptions}</select></label>
+          <fieldset><legend>Когда</legend><div>
+            <button type="button" class="${draft.taskBucket === "today" ? "active" : ""}" data-inbox-choice="taskBucket" data-value="today">Сегодня</button>
+            <button type="button" class="${draft.taskBucket === "backlog" ? "active" : ""}" data-inbox-choice="taskBucket" data-value="backlog">Бэклог</button>
+          </div></fieldset>
+          <button type="button" class="primary simple-inbox-create" data-inbox-action="create-task">Создать задачу</button>
+        </div>` : `<div class="simple-inbox-destination">
+          <label><span>Папка</span><select data-inbox-triage-field="folderId">${noteFolderOptions}</select></label>
+          <p class="simple-inbox-destination-hint">Заметка появится в библиотеке и откроется в редакторе.</p>
+          <button type="button" class="primary simple-inbox-create" data-inbox-action="create-note">Создать заметку</button>
+        </div>`}
+      </div>`}
       <button type="button" class="danger-text" data-inbox-action="delete">Удалить запись</button>
     </section>`;
   }
@@ -3360,7 +3616,7 @@ function renderSimpleDetail(meta) {
       <button type="button" class="danger-text" data-simple-action="archive-habit">${habitItem.archived ? "Вернуть из архива" : "Переместить в архив"}</button>
     </section>`;
   }
-  const calendarBlock = module === "calendar"
+  const calendarBlock = (module === "calendar" || (module === "tasks" && state.settings.activeView === "today"))
     ? state.dailyPlan.timeBlocks.find((item) => item.id === state.ui?.selectedCalendarBlockId) || null
     : null;
   if (calendarBlock) {
@@ -3470,15 +3726,25 @@ function renderSimpleDetail(meta) {
   }
   const noteItem = module === "notes" ? state.notes.find((item) => item.id === state.ui?.selectedNoteId) : null;
   if (noteItem) {
-    const wordCount = noteBody(noteItem).trim() ? noteBody(noteItem).trim().split(/\s+/).length : 0;
+    const stats = noteDocumentStats(noteBody(noteItem));
     return `<section class="simple-detail-card simple-note-editor" data-note-id="${escapeHtml(noteItem.id)}">
       <div class="simple-note-editor-bar">
         <div class="simple-note-path"><span>Заметки</span><b>/</b><select data-note-field="folderId" aria-label="Список заметки" title="Переместить в список"><option value="">Без списка</option>${noteFolders().map(({ id, title }) => `<option value="${escapeHtml(id)}" ${noteItem.folderId === id ? "selected" : ""}>${escapeHtml(title)}</option>`).join("")}</select></div>
-        <span class="simple-save-hint">Сохранено · ${wordCount} слов</span>
+        <span class="simple-save-hint" data-note-save-status>Сохранено</span>
         <div class="simple-note-menu-wrap"><button type="button" class="simple-detail-menu-button ${state.ui.noteMenuOpen ? "active" : ""}" data-simple-action="note-menu" aria-label="Действия с заметкой"><img src="/icons/ellipsis.svg" alt="" /></button>${state.ui.noteMenuOpen ? `<div class="simple-note-menu" role="menu"><button class="danger-text" type="button" data-simple-action="delete-note">Удалить заметку</button></div>` : ""}</div>
         <button type="button" class="simple-detail-close" data-simple-action="close-detail" aria-label="Закрыть заметку"><img src="/icons/x.svg" alt="" /></button>
       </div>
       <textarea class="simple-note-title" data-note-field="title" rows="2" placeholder="Без названия">${escapeHtml(noteTitle(noteItem))}</textarea>
+      <div class="simple-note-formatbar" role="toolbar" aria-label="Форматирование заметки">
+        <button type="button" data-note-command="heading" title="Заголовок">H2</button>
+        <button type="button" data-note-command="bold" title="Жирный текст"><b>B</b></button>
+        <span class="simple-note-format-divider"></span>
+        <button type="button" data-note-command="bullet" title="Маркированный список">•</button>
+        <button type="button" data-note-command="checklist" title="Чек-лист">☐</button>
+        <button type="button" data-note-command="quote" title="Цитата">›</button>
+        <button type="button" data-note-command="divider" title="Разделитель">―</button>
+        <span class="simple-note-document-stats" data-note-stats>${stats.words} слов · ${stats.characters} знаков · ${stats.readingMinutes} мин</span>
+      </div>
       <textarea class="simple-note-body" data-note-field="text" placeholder="Начни писать…">${escapeHtml(noteBody(noteItem))}</textarea>
       <label class="simple-note-tags"><span>Теги</span><input data-note-field="tags" value="${escapeHtml((noteItem.tags || []).join(", "))}" placeholder="например: обучение, идея" /></label>
     </section>`;
@@ -3487,6 +3753,56 @@ function renderSimpleDetail(meta) {
     return `<section class="simple-note-empty-editor"><strong>Выбери заметку</strong><p>Или создай новую слева — редактор откроется здесь.</p></section>`;
   }
   return "";
+}
+
+function noteDocumentStats(text = "") {
+  const clean = String(text).trim();
+  const words = clean ? clean.split(/\s+/).filter(Boolean).length : 0;
+  return {
+    words,
+    characters: String(text).length,
+    readingMinutes: Math.max(1, Math.ceil(words / 180)),
+  };
+}
+
+function updateNoteEditorStatus(noteRoot, text, status = "Сохранено") {
+  const stats = noteDocumentStats(text);
+  const statsNode = noteRoot?.querySelector("[data-note-stats]");
+  const statusNode = noteRoot?.querySelector("[data-note-save-status]");
+  if (statsNode) statsNode.textContent = `${stats.words} слов · ${stats.characters} знаков · ${stats.readingMinutes} мин`;
+  if (statusNode) statusNode.textContent = status;
+}
+
+function replaceNoteSelection(field, prefix, suffix = "", lineCommand = false) {
+  if (!field) return;
+  const start = field.selectionStart;
+  const end = field.selectionEnd;
+  const value = field.value;
+  if (lineCommand) {
+    const lineStart = value.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+    const selectedEnd = end > start ? end : value.indexOf("\n", start) < 0 ? value.length : value.indexOf("\n", start);
+    const selected = value.slice(lineStart, selectedEnd);
+    const replacement = selected.split("\n").map((line) => `${prefix}${line}`).join("\n");
+    field.setRangeText(replacement, lineStart, selectedEnd, "end");
+  } else {
+    const selected = value.slice(start, end);
+    field.setRangeText(`${prefix}${selected}${suffix}`, start, end, "select");
+    field.setSelectionRange(start + prefix.length, start + prefix.length + selected.length);
+  }
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+  field.focus();
+}
+
+function applyNoteTextCommand(field, command) {
+  const commands = {
+    heading: () => replaceNoteSelection(field, "## ", "", true),
+    bold: () => replaceNoteSelection(field, "**", "**"),
+    bullet: () => replaceNoteSelection(field, "- ", "", true),
+    checklist: () => replaceNoteSelection(field, "- [ ] ", "", true),
+    quote: () => replaceNoteSelection(field, "> ", "", true),
+    divider: () => replaceNoteSelection(field, `${field.selectionStart && !field.value.slice(0, field.selectionStart).endsWith("\n") ? "\n" : ""}---\n`),
+  };
+  commands[command]?.();
 }
 
 function addSimpleComposerItem(text, meta) {
@@ -3840,7 +4156,283 @@ document.addEventListener("click", (event) => {
   saveState();
 }, true);
 
+function handleTodayWorkbenchClick(target) {
+  if (currentSimpleModule() !== "tasks" || state.settings.activeView !== "today") return false;
+
+  const detailAction = target.closest?.("[data-simple-action]");
+  if (detailAction?.dataset.simpleAction === "close-calendar-detail") {
+    state.ui.selectedCalendarBlockId = null;
+    saveState();
+    return true;
+  }
+  if (detailAction?.dataset.simpleAction === "delete-calendar-block") {
+    const blockId = detailAction.closest("[data-calendar-block-id]")?.dataset.calendarBlockId;
+    const block = state.dailyPlan.timeBlocks.find((item) => item.id === blockId);
+    if (block) {
+      state.dailyPlan.timeBlocks = state.dailyPlan.timeBlocks.filter((item) => item.id !== blockId);
+      state.assistantActions.unshift(action("Блок удалён из плана дня", `${block.title}, ${block.start}–${block.end}.`, "confirmed"));
+    }
+    state.ui.selectedCalendarBlockId = null;
+    saveState();
+    return true;
+  }
+  if (detailAction?.dataset.simpleAction === "close-detail") {
+    state.ui.selectedTaskId = null;
+    state.ui.taskMenuOpen = false;
+    state.ui.taskMenuPosition = null;
+    state.ui.quickTagsOpen = false;
+    state.ui.taskDecompositionDraft = null;
+    state.ui.taskDecompositionPendingId = "";
+    saveState();
+    return true;
+  }
+  if (detailAction?.dataset.simpleAction === "toggle-selected") {
+    const item = getSelectedTask();
+    if (!item) return true;
+    stageUndo(item.workflowStatus === "done" ? "Задача возвращена" : "Задача завершена");
+    if (item.workflowStatus === "done") restoreTaskRecord(item);
+    else completeTaskRecord(item);
+    saveState();
+    return true;
+  }
+  if (detailAction?.dataset.simpleAction === "task-menu") {
+    state.ui.taskMenuOpen = !state.ui.taskMenuOpen;
+    state.ui.taskMenuPosition = null;
+    state.ui.quickTagsOpen = false;
+    saveState();
+    return true;
+  }
+  if (detailAction?.dataset.simpleAction === "schedule-task") {
+    const item = getSelectedTask();
+    if (!item) return true;
+    state.ui.taskMenuOpen = false;
+    state.ui.taskMenuPosition = null;
+    openOrScheduleTaskInCalendar(item);
+    return true;
+  }
+
+  const todayAction = target.closest?.("[data-today-action]");
+  if (todayAction) {
+    const command = todayAction.dataset.todayAction;
+    if (command === "select-block") {
+      const blockId = todayAction.dataset.blockId;
+      if (!state.dailyPlan.timeBlocks.some((item) => item.id === blockId)) return true;
+      state.ui.selectedCalendarBlockId = blockId;
+      state.ui.selectedTaskId = null;
+      state.ui.taskMenuOpen = false;
+      saveState();
+      return true;
+    }
+    if (command === "add-block") {
+      const blocks = todayAcceptedBlocks();
+      const now = new Date();
+      const roundedNow = Math.ceil((now.getHours() * 60 + now.getMinutes()) / 30) * 30;
+      const lastEnd = blocks.length ? Math.max(...blocks.map((item) => timeMinutes(item.end))) : 0;
+      const startMinutes = Math.max(8 * 60, Math.min(22 * 60 + 30, Math.max(roundedNow, lastEnd)));
+      const endMinutes = Math.min(23 * 60 + 30, startMinutes + 60);
+      const start = `${String(Math.floor(startMinutes / 60)).padStart(2, "0")}:${String(startMinutes % 60).padStart(2, "0")}`;
+      const end = `${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`;
+      const block = timeBlock(start, end, "Новый блок", "", "confirmed");
+      persistCalendarBlock(block, { actionTitle: "Блок добавлен в план дня" });
+      return true;
+    }
+  }
+
+  const todayTask = target.closest?.("[data-today-task-id]");
+  if (todayTask) {
+    const taskId = todayTask.dataset.todayTaskId;
+    if (!state.tasks.some((item) => item.id === taskId)) return true;
+    state.ui.selectedCalendarBlockId = null;
+    selectTask(taskId);
+    saveState();
+    return true;
+  }
+
+  const taskRow = target.closest?.('[data-simple-object="task"]');
+  const taskToggle = target.closest?.('[data-action="toggle"]');
+  if (taskRow && taskToggle) {
+    const item = state.tasks.find((candidate) => candidate.id === taskRow.dataset.taskId);
+    if (!item) return true;
+    stageUndo(item.workflowStatus === "done" ? "Задача возвращена" : "Задача завершена");
+    if (item.workflowStatus === "done") restoreTaskRecord(item);
+    else completeTaskRecord(item);
+    saveState();
+    return true;
+  }
+
+  const planAction = target.closest?.("[data-simple-plan-action]");
+  if (taskRow && planAction) {
+    const item = state.tasks.find((candidate) => candidate.id === taskRow.dataset.taskId);
+    if (!item) return true;
+    const nextBucket = planAction.dataset.simplePlanAction === "today" ? "today" : "inbox";
+    setTaskPlanBucket(item, nextBucket);
+    item.updatedAt = new Date().toISOString();
+    state.assistantActions.unshift(action(nextBucket === "today" ? "Задача добавлена в Сегодня" : "Задача возвращена во входящие", item.title, "confirmed"));
+    saveState();
+    return true;
+  }
+
+  const taskMenuAction = target.closest?.('[data-simple-action="select-task-menu"]');
+  if (taskRow && taskMenuAction) {
+    state.ui.selectedCalendarBlockId = null;
+    if (selectTask(taskRow.dataset.taskId)) state.ui.taskMenuOpen = true;
+    state.ui.taskMenuPosition = null;
+    state.ui.quickTagsOpen = false;
+    saveState();
+    return true;
+  }
+
+  if (taskRow && !target.closest?.("button, input, select, textarea")) {
+    state.ui.selectedCalendarBlockId = null;
+    selectTask(taskRow.dataset.taskId);
+    state.ui.selectedNoteId = null;
+    state.ui.noteMenuOpen = false;
+    state.ui.taskMenuOpen = false;
+    state.ui.quickTagsOpen = false;
+    saveState();
+    return true;
+  }
+
+  return false;
+}
+
+document.addEventListener("click", (event) => {
+  const app = document.querySelector("#simpleApp");
+  if (!app?.contains(event.target)) return;
+  if (!handleTodayWorkbenchClick(event.target)) return;
+  event.preventDefault();
+  event.stopPropagation();
+}, true);
+
+function handleTodayWorkbenchChange(target) {
+  if (currentSimpleModule() !== "tasks" || state.settings.activeView !== "today") return false;
+
+  const dailyPlanField = target.closest?.("[data-daily-plan-field]");
+  if (dailyPlanField) {
+    const field = dailyPlanField.dataset.dailyPlanField;
+    if (field === "focus") state.dailyPlan.focus = dailyPlanField.value.trim();
+    if (field === "reviewSummary") state.dailyPlan.reviewSummary = dailyPlanField.value.trim();
+    state.dailyPlan.date = todayIso;
+    state.assistantActions.unshift(action(field === "focus" ? "Фокус дня обновлён" : "Review дня обновлён", dailyPlanField.value.trim() || "Поле очищено", "confirmed"));
+    saveState();
+    return true;
+  }
+
+  const calendarBlockField = target.closest?.("[data-calendar-block-field]");
+  if (calendarBlockField) {
+    const blockRoot = calendarBlockField.closest("[data-calendar-block-id]");
+    const block = state.dailyPlan.timeBlocks.find((item) => item.id === blockRoot?.dataset.calendarBlockId);
+    if (!block) return true;
+    const field = calendarBlockField.dataset.calendarBlockField;
+    const value = calendarBlockField.value;
+    if (["title", "date", "endDate", "start", "end", "nextAction", "recurrence"].includes(field)) block[field] = value;
+    if (field === "reminderMinutes") {
+      block.reminderMinutes = value === "" ? null : Number(value);
+      if (value !== "") requestReminderPermission().then(() => {
+        scheduleSystemReminders();
+        renderSimpleApp();
+      });
+    }
+    if (!block.endDate || block.endDate < block.date) block.endDate = block.date;
+    if (!block.title.trim()) block.title = "Новый блок";
+    if (block.endDate === block.date && timeMinutes(block.end) <= timeMinutes(block.start)) {
+      block.end = calendarTimeValue(new Date(new Date(`${block.date || todayIso}T${block.start}:00`).getTime() + 30 * 60 * 1000));
+    }
+    block.updatedAt = new Date().toISOString();
+    saveState();
+    return true;
+  }
+
+  const taskField = target.closest?.("[data-task-field]");
+  if (taskField) {
+    const taskRoot = taskField.closest("[data-task-id]");
+    const item = state.tasks.find((candidate) => candidate.id === taskRoot?.dataset.taskId);
+    if (!item) return true;
+    updateTaskField(item, taskField.dataset.taskField, taskField.value);
+    saveState();
+    return true;
+  }
+
+  return false;
+}
+
+document.addEventListener("change", (event) => {
+  const app = document.querySelector("#simpleApp");
+  if (!app?.contains(event.target)) return;
+  if (!handleTodayWorkbenchChange(event.target)) return;
+  event.stopPropagation();
+}, true);
+
+document.addEventListener("input", (event) => {
+  if (currentSimpleModule() !== "tasks" || state.settings.activeView !== "today") return;
+  const app = document.querySelector("#simpleApp");
+  if (!app?.contains(event.target)) return;
+
+  const dailyPlanField = event.target.closest?.("[data-daily-plan-field]");
+  if (dailyPlanField) {
+    const field = dailyPlanField.dataset.dailyPlanField;
+    if (field === "focus") state.dailyPlan.focus = dailyPlanField.value;
+    if (field === "reviewSummary") state.dailyPlan.reviewSummary = dailyPlanField.value;
+    state.dailyPlan.date = todayIso;
+    localStorage.setItem(STORAGE_KEY, serializeStateSnapshot(state));
+    queueCloudSave();
+    event.stopPropagation();
+    return;
+  }
+
+  const calendarBlockField = event.target.closest?.('[data-calendar-block-field="title"], [data-calendar-block-field="nextAction"]');
+  if (calendarBlockField) {
+    const blockRoot = calendarBlockField.closest("[data-calendar-block-id]");
+    const block = state.dailyPlan.timeBlocks.find((item) => item.id === blockRoot?.dataset.calendarBlockId);
+    if (!block) return;
+    block[calendarBlockField.dataset.calendarBlockField] = calendarBlockField.value;
+    block.updatedAt = new Date().toISOString();
+    const timelineBlock = document.querySelector(`[data-today-block="${CSS.escape(block.id)}"]`);
+    const liveField = calendarBlockField.dataset.calendarBlockField === "title"
+      ? timelineBlock?.querySelector(".today-block-copy > strong")
+      : timelineBlock?.querySelector(".today-block-copy > small");
+    if (liveField) liveField.textContent = calendarBlockField.value;
+    localStorage.setItem(STORAGE_KEY, serializeStateSnapshot(state));
+    queueCloudSave();
+    event.stopPropagation();
+    return;
+  }
+
+  const taskField = event.target.closest?.('[data-task-field="title"], [data-task-field="description"], input[data-task-field="tags"]');
+  if (taskField) {
+    const taskRoot = taskField.closest("[data-task-id]");
+    const item = state.tasks.find((candidate) => candidate.id === taskRoot?.dataset.taskId);
+    if (!item) return;
+    updateTaskField(item, taskField.dataset.taskField, taskField.value);
+    localStorage.setItem(STORAGE_KEY, serializeStateSnapshot(state));
+    queueCloudSave();
+    event.stopPropagation();
+  }
+}, true);
+
 document.querySelector("#simpleApp")?.addEventListener("click", async (event) => {
+  const noteCommand = event.target.closest?.("[data-note-command]");
+  if (noteCommand) {
+    const noteRoot = noteCommand.closest("[data-note-id]");
+    const field = noteRoot?.querySelector('textarea[data-note-field="text"]');
+    applyNoteTextCommand(field, noteCommand.dataset.noteCommand);
+    return;
+  }
+
+  const noteSelection = event.target.closest?.('[data-simple-object="note"], [data-simple-action="select-note"]');
+  if (noteSelection) {
+    const noteRow = noteSelection.closest('[data-simple-object="note"]');
+    const noteId = noteRow?.dataset.noteId;
+    if (!noteId || !state.notes.some((item) => item.id === noteId)) return;
+    state.ui.selectedNoteId = noteId;
+    state.ui.selectedTaskId = null;
+    state.ui.noteMenuOpen = false;
+    state.ui.simpleModule = "notes";
+    state.settings.activeView = "notes";
+    saveState();
+    return;
+  }
+
   if (event.target.matches("#simpleToastLayer.has-confirmation")) {
     clearPendingConfirmation();
     saveState();
@@ -4090,6 +4682,7 @@ document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>
     }
     state.settings.activeView = viewButton.dataset.simpleView;
     if (simpleTaskViews.has(viewButton.dataset.simpleView)) state.ui.lastTaskView = viewButton.dataset.simpleView;
+    if (simpleTaskViews.has(viewButton.dataset.simpleView) && viewButton.dataset.simpleView !== "board") state.ui.lastListView = viewButton.dataset.simpleView;
     state.ui.simpleArea = "";
     state.ui.simpleModule = "tasks";
     state.ui.selectedTaskId = null;
@@ -4231,10 +4824,42 @@ document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>
   }
 
   const inboxAction = event.target.closest("[data-inbox-action]");
-  if (inboxAction) {
+  if (inboxAction && !inboxAction.closest("#simpleDetail")) {
     const row = inboxAction.closest("[data-inbox-id]");
     const item = state.inboxItems.find((candidate) => candidate.id === row?.dataset.inboxId);
-    handleInboxAction(inboxAction.dataset.inboxAction, item);
+    if (inboxAction.closest(".capture-result")
+      && inboxAction.dataset.inboxAction === "open-linked"
+      && !getInboxLinkedObject(item)) {
+      state.settings.activeView = "inbox";
+      state.ui.selectedInboxId = item?.id || null;
+    } else {
+      handleInboxAction(inboxAction.dataset.inboxAction, item);
+    }
+    saveState();
+    return;
+  }
+
+  const inboxChoice = event.target.closest("[data-inbox-choice]");
+  if (inboxChoice && !inboxChoice.closest("#simpleDetail")) {
+    const row = inboxChoice.closest("[data-inbox-id]");
+    const item = state.inboxItems.find((candidate) => candidate.id === row?.dataset.inboxId);
+    if (!item) return;
+    const draft = inboxTriageDraft(item);
+    draft[inboxChoice.dataset.inboxChoice] = inboxChoice.dataset.value;
+    saveState();
+    return;
+  }
+
+  const inboxReceiptAction = event.target.closest("[data-inbox-receipt-action]");
+  if (inboxReceiptAction) {
+    const receipt = inboxReceipt;
+    window.clearTimeout(inboxReceiptTimer);
+    inboxReceipt = null;
+    inboxReceiptTimer = null;
+    if (inboxReceiptAction.dataset.inboxReceiptAction === "open" && receipt) {
+      const sourceItem = state.inboxItems.find((item) => item.id === receipt.sourceInboxId);
+      if (sourceItem) openInboxLinkedObject(sourceItem);
+    }
     saveState();
     return;
   }
@@ -4243,6 +4868,8 @@ document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>
   if (inboxSelect) {
     const row = inboxSelect.closest("[data-inbox-id]");
     state.ui.selectedInboxId = row?.dataset.inboxId || null;
+    const item = state.inboxItems.find((candidate) => candidate.id === state.ui.selectedInboxId);
+    if (item && state.ui.inboxDraft?.itemId !== item.id) state.ui.inboxDraft = null;
     state.ui.selectedTaskId = null;
     state.ui.selectedNoteId = null;
     saveState();
@@ -4251,6 +4878,7 @@ document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>
 
   if (event.target.closest('[data-simple-action="close-inbox-detail"]')) {
     state.ui.selectedInboxId = null;
+    state.ui.inboxDraft = null;
     saveState();
     return;
   }
@@ -4493,21 +5121,12 @@ document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>
 
   const taskRow = event.target.closest('[data-simple-object="task"]');
   if (taskRow && !event.target.closest('[data-action="toggle"]')) {
+    state.ui.selectedCalendarBlockId = null;
     selectTask(taskRow.dataset.taskId);
     state.ui.selectedNoteId = null;
     state.ui.noteMenuOpen = false;
     state.ui.taskMenuOpen = false;
     state.ui.quickTagsOpen = false;
-    saveState();
-    return;
-  }
-
-  const noteRow = event.target.closest('[data-simple-object="note"]');
-  if (noteRow) {
-    state.ui.selectedNoteId = noteRow.dataset.noteId;
-    state.ui.selectedTaskId = null;
-    state.ui.simpleModule = "notes";
-    state.settings.activeView = "notes";
     saveState();
     return;
   }
@@ -4715,6 +5334,17 @@ document.querySelector("#simpleApp")?.addEventListener("submit", (event) => {
 });
 
 document.querySelector("#simpleApp")?.addEventListener("change", (event) => {
+  const dailyPlanField = event.target.closest("[data-daily-plan-field]");
+  if (dailyPlanField) {
+    const field = dailyPlanField.dataset.dailyPlanField;
+    if (field === "focus") state.dailyPlan.focus = dailyPlanField.value.trim();
+    if (field === "reviewSummary") state.dailyPlan.reviewSummary = dailyPlanField.value.trim();
+    state.dailyPlan.date = todayIso;
+    state.assistantActions.unshift(action(field === "focus" ? "Фокус дня обновлён" : "Review дня обновлён", dailyPlanField.value.trim() || "Поле очищено", "confirmed"));
+    saveState();
+    return;
+  }
+
   const inboxField = event.target.closest("[data-inbox-field]");
   if (inboxField) {
     const inboxRoot = inboxField.closest("[data-inbox-id]");
@@ -4722,6 +5352,17 @@ document.querySelector("#simpleApp")?.addEventListener("change", (event) => {
     if (!item) return;
     if (inboxField.dataset.inboxField === "title") item.parsed = { ...(item.parsed || {}), title: inboxField.value.trim() || item.text };
     if (inboxField.dataset.inboxField === "text") item.text = inboxField.value;
+    saveState();
+    return;
+  }
+
+  const inboxTriageField = event.target.closest("[data-inbox-triage-field]");
+  if (inboxTriageField) {
+    const inboxRoot = inboxTriageField.closest("[data-inbox-id]");
+    const item = state.inboxItems.find((candidate) => candidate.id === inboxRoot?.dataset.inboxId);
+    if (!item) return;
+    const draft = inboxTriageDraft(item);
+    draft[inboxTriageField.dataset.inboxTriageField] = inboxTriageField.value;
     saveState();
     return;
   }
@@ -4861,8 +5502,11 @@ document.querySelector("#simpleApp")?.addEventListener("input", (event) => {
   if (noteField.dataset.noteField === "text") item.text = noteField.value;
   if (noteField.dataset.noteField === "tags") item.tags = noteField.value.split(",").map((tag) => tag.trim()).filter(Boolean).slice(0, 12);
   item.updatedAt = new Date().toISOString();
+  updateNoteEditorStatus(noteRoot, item.text, "Сохраняю…");
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   queueCloudSave();
+  window.clearTimeout(noteRoot._noteSaveTimer);
+  noteRoot._noteSaveTimer = window.setTimeout(() => updateNoteEditorStatus(noteRoot, item.text), 550);
 });
 
 document.querySelector("#simpleApp")?.addEventListener("click", async (event) => {
@@ -4937,6 +5581,30 @@ document.querySelector("#simpleSignOutButton")?.addEventListener("click", async 
   updateAuthUi();
 });
 
+// The Inbox inspector is rebuilt on every state change. Delegate its controls
+// from the stable detail rail so triage never depends on the larger app handler.
+document.querySelector("#simpleDetail")?.addEventListener("click", (event) => {
+  const inboxAction = event.target.closest("[data-inbox-action]");
+  const inboxChoice = event.target.closest("[data-inbox-choice]");
+  if (!inboxAction && !inboxChoice) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  const control = inboxAction || inboxChoice;
+  const row = control.closest("[data-inbox-id]");
+  const item = state.inboxItems.find((candidate) => candidate.id === row?.dataset.inboxId);
+  if (!item) return;
+
+  if (inboxChoice) {
+    const draft = inboxTriageDraft(item);
+    draft[inboxChoice.dataset.inboxChoice] = inboxChoice.dataset.value;
+  } else {
+    handleInboxAction(inboxAction.dataset.inboxAction, item);
+  }
+  saveState();
+});
+
 window.addEventListener("offline", () => {
   networkOffline = true;
   renderSimpleApp();
@@ -4997,25 +5665,6 @@ document.querySelector("#todayView")?.addEventListener("click", (event) => {
   saveState();
 });
 
-document.querySelector("#inboxView")?.addEventListener("click", (event) => {
-  const inboxAction = event.target.closest("[data-inbox-action]");
-  if (inboxAction) {
-    const row = inboxAction.closest("[data-inbox-id]");
-    const item = state.inboxItems.find((candidate) => candidate.id === row?.dataset.inboxId);
-    handleInboxAction(inboxAction.dataset.inboxAction, item);
-    saveState();
-    return;
-  }
-
-  const inboxObject = event.target.closest('[data-action="select-inbox"]');
-  if (!inboxObject) return;
-  const row = inboxObject.closest("[data-inbox-id]");
-  state.ui = state.ui || {};
-  state.ui.selectedInboxId = row?.dataset.inboxId || null;
-  state.ui.selectedTaskId = null;
-  saveState();
-});
-
 document.body.addEventListener("click", (event) => {
   const clearCapture = event.target.closest('[data-action="clear-capture-result"]');
   if (clearCapture) {
@@ -5029,29 +5678,6 @@ document.body.addEventListener("click", (event) => {
     state.settings.activeView = "habits";
     state.ui.selectedTaskId = null;
     state.focus.selectedTaskId = null;
-    saveState();
-    return;
-  }
-
-  const captureInboxAction = event.target.closest(".capture-result [data-inbox-action]");
-  if (captureInboxAction) {
-    const row = captureInboxAction.closest("[data-inbox-id]");
-    const item = state.inboxItems.find((candidate) => candidate.id === row?.dataset.inboxId);
-    if (captureInboxAction.dataset.inboxAction === "open-linked" && !getInboxLinkedObject(item)) {
-      state.settings.activeView = "inbox";
-      state.ui.selectedInboxId = item?.id || null;
-    } else {
-      handleInboxAction(captureInboxAction.dataset.inboxAction, item);
-    }
-    saveState();
-    return;
-  }
-
-  const inboxAction = event.target.closest(".app-inspector [data-inbox-action]");
-  if (inboxAction) {
-    const row = inboxAction.closest("[data-inbox-id]");
-    const item = state.inboxItems.find((candidate) => candidate.id === row?.dataset.inboxId);
-    handleInboxAction(inboxAction.dataset.inboxAction, item);
     saveState();
     return;
   }
@@ -5474,6 +6100,29 @@ document.addEventListener("drop", (event) => {
   state.ui.selectedTaskId = item.id;
   state.assistantActions.unshift(action("Этап задачи изменён", `${item.title} → ${workflowLabel(nextWorkflowStatus)}`, "confirmed"));
   saveState();
+});
+
+document.querySelector("#simpleApp")?.addEventListener("keydown", (event) => {
+  const noteBodyField = event.target.closest('textarea[data-note-field="text"]');
+  const noteEditor = event.target.closest(".simple-note-editor");
+  if (!noteEditor) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    state.ui.selectedNoteId = null;
+    state.ui.noteMenuOpen = false;
+    saveState();
+    return;
+  }
+  if (!noteBodyField) return;
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
+    event.preventDefault();
+    applyNoteTextCommand(noteBodyField, "bold");
+    return;
+  }
+  if (event.key === "Tab") {
+    event.preventDefault();
+    replaceNoteSelection(noteBodyField, "  ");
+  }
 });
 
 document.addEventListener("keydown", (event) => {
