@@ -48,6 +48,12 @@ Verified Today in light and dark modes at 2048×990, 1440×900, and 390×844.
 - At wide desktop sizes the accepted plan is intentionally capped at 1180 px; screens with unusually long task metadata still rely on existing row wrapping.
 - The in-app browser again rendered a temporary pale strip in one screenshot even though the app, main pane, body geometry, and computed backgrounds covered the full 900 px viewport. Measurements showed no DOM or CSS gap, so no compensating rule was added.
 
+## Production-readiness follow-up
+
+- Vercel preview exposed an existing auth-shell defect: both `checking` and `signed-out` hid the app while `.auth-gate` also remained hidden.
+- The existing auth gate is now visible in those two states, preventing the deployment from presenting an empty grid before GitHub sign-in.
+- Public asset and service-worker cache versions were advanced to v212 for this follow-up.
+
 ## Next smallest valuable stage
 
 No follow-up is required for Today composition. Any further change should be based on a new screenshot or a specific interaction defect rather than another general polish pass.
