@@ -55,6 +55,11 @@ body[data-auth="signed-out"] {
   padding: 24px;
 }
 
+body[data-auth="checking"] .auth-gate,
+body[data-auth="signed-out"] .auth-gate {
+  display: grid;
+}
+
 .auth-card {
   display: grid;
   gap: 20px;
