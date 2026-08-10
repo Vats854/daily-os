@@ -7031,6 +7031,60 @@ body[data-auth] .simple-app[data-design="soft-tech"].detail-open {
   text-overflow: ellipsis;
 }
 
+/* v213: keep Projects inside the viewport at browser zoom and laptop widths. */
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-main,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-list,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-workspace,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-canvas,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-grid > section,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-stage-form,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-obstacles form,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-task-tools,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-task-tools form {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-title-input,
+.simple-app[data-design="soft-tech"][data-module="projects"] input,
+.simple-app[data-design="soft-tech"][data-module="projects"] textarea,
+.simple-app[data-design="soft-tech"][data-module="projects"] select {
+  max-width: 100%;
+}
+
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-hero > div,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-tasks > div,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-task-title {
+  min-width: 0;
+}
+
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-hero p,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-muted,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-task-title strong,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-task-title small {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1180px) {
+  .simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-index {
+    display: flex;
+    gap: 6px;
+    padding: 0 0 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--core-line);
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-index button {
+    flex: 0 0 min(190px, 72vw);
+  }
+}
+
 .simple-app[data-design="soft-tech"][data-module="calendar"] .calendar-engine-shell,
 .simple-app[data-design="soft-tech"][data-module="calendar"] .calendar-scroll {
   min-width: 0;
