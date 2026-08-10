@@ -7831,3 +7831,28 @@ body,
     grid-template-columns: auto minmax(0, 1fr);
   }
 }
+
+/* v214: every product module remains reachable from the mobile rail. */
+@media (max-width: 720px) {
+  .simple-app[data-design="soft-tech"] .simple-icon-rail {
+    display: grid;
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: 56px;
+    justify-content: start;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+
+  .simple-app[data-design="soft-tech"] .simple-icon-rail::-webkit-scrollbar {
+    display: none;
+  }
+
+  .simple-app[data-design="soft-tech"] .simple-icon-rail [data-simple-module="capture"],
+  .simple-app[data-design="soft-tech"] .simple-icon-rail [data-simple-module="notes"],
+  .simple-app[data-design="soft-tech"] .simple-icon-rail [data-simple-module="projects"],
+  .simple-app[data-design="soft-tech"] .simple-icon-rail [data-simple-module="log"] {
+    display: grid;
+  }
+}

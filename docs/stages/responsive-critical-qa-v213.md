@@ -11,6 +11,8 @@ page at common desktop, zoom-equivalent, and mobile widths in both light and dar
 - A local v213 fix prevents Projects from widening the document below 1180 CSS pixels.
 - At 1024 px Projects uses a horizontal project index and has no page overflow.
 - At 1440 px Projects keeps the two-column workbench and all forms fit.
+- The full matrix found one shared critical issue: mobile navigation exposed only Tasks,
+  Calendar, Habits, and Focus, leaving four product modules unreachable.
 - Existing unrelated user changes are present and remain outside this stage.
 
 ## In scope
@@ -43,6 +45,7 @@ No state or schema changes. Only CSS containment and asset/cache versioning may 
 3. Primary headings, object titles, forms, and action controls stay inside their region.
 4. Dark and light themes preserve the same geometry.
 5. All required checks and the 13 task-state smoke tests pass.
+6. All eight product modules are reachable from the mobile rail.
 
 ## Verification
 
