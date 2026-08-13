@@ -5,10 +5,11 @@ import {
   loadCloudState,
   onAuthStateChange,
   saveCloudNotes,
+  savePushSubscription,
   saveCloudState,
   signInWithGithub,
   signOut
-} from "./supabase-client.js?v=129";
+} from "./supabase-client.js?v=217";
 import {
   createBackupPayload,
   createTaskRecord,
@@ -166,6 +167,7 @@ const seedState = {
     appearanceMode: "system",
     appearanceTheme: "sky",
     appearanceFont: "clean",
+    notificationTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     shortcuts: { ...defaultShortcuts }
   },
   lists: structuredClone(defaultTaskLists),
@@ -459,6 +461,7 @@ function timeBlock(start, end, title, nextAction, status = "draft") {
     status,
     recurrence: "none",
     reminderMinutes: null,
+    endReminderMinutes: null,
     createdAt: new Date().toISOString()
   };
 }
@@ -525,6 +528,9 @@ function normalizeState(nextState) {
   if (!["sky", "indigo", "clay"].includes(nextState.settings.appearanceTheme)) nextState.settings.appearanceTheme = "sky";
   if (!["system", "light", "dark"].includes(nextState.settings.appearanceMode)) nextState.settings.appearanceMode = "system";
   if (!["clean", "soft", "editorial"].includes(nextState.settings.appearanceFont)) nextState.settings.appearanceFont = "clean";
+  if (typeof nextState.settings.notificationTimeZone !== "string" || !nextState.settings.notificationTimeZone) {
+    nextState.settings.notificationTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  }
   if (nextState.settings.activeView === "overview") nextState.settings.activeView = "projects";
   if (!["inbox", "today", "week", "all", "projects", "board", "focus", "habits", "notes", "log", "done"].includes(nextState.settings.activeView)) {
     nextState.settings.activeView = "today";
@@ -597,6 +603,12 @@ function normalizeState(nextState) {
       : Number(block.reminderMinutes);
     block.reminderMinutes = Number.isFinite(reminderMinutes) && reminderMinutes >= 0 && reminderMinutes <= 10080
       ? reminderMinutes
+      : null;
+    const endReminderMinutes = block.endReminderMinutes === null || block.endReminderMinutes === undefined || block.endReminderMinutes === ""
+      ? null
+      : Number(block.endReminderMinutes);
+    block.endReminderMinutes = Number.isFinite(endReminderMinutes) && endReminderMinutes >= 0 && endReminderMinutes <= 1440
+      ? endReminderMinutes
       : null;
   });
   nextState.weeklyPlan = { ...seedState.weeklyPlan, ...(nextState.weeklyPlan || {}) };
@@ -1805,6 +1817,19 @@ function renderReminderOptions(value) {
   ].map(([option, label]) => `<option value="${option}" ${current === option ? "selected" : ""}>${label}</option>`).join("");
 }
 
+function renderEndReminderOptions(value) {
+  const current = value === null || value === undefined || value === "" ? "" : String(Number(value));
+  return [
+    ["", "Без напоминания"],
+    ["0", "В момент завершения"],
+    ["5", "За 5 минут"],
+    ["10", "За 10 минут"],
+    ["15", "За 15 минут"],
+    ["30", "За 30 минут"],
+    ["60", "За 1 час"]
+  ].map(([option, label]) => `<option value="${option}" ${current === option ? "selected" : ""}>${label}</option>`).join("");
+}
+
 function renderOptionChips(field, options, current, labels = {}) {
   return options.map((value) => `<button
     class="option-chip ${String(current) === String(value) ? "active" : ""}"
@@ -2897,6 +2922,42 @@ async function requestReminderPermission() {
   return Notification.permission;
 }
 
+function decodeVapidKey(value) {
+  const padding = "=".repeat((4 - value.length % 4) % 4);
+  const raw = atob((value + padding).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(raw, (character) => character.charCodeAt(0));
+}
+
+async function enablePushNotifications() {
+  const permission = await requestReminderPermission();
+  if (permission !== "granted") return permission;
+  state.settings.notificationTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "foreground-only";
+  const config = await getAppConfig();
+  const publicKey = String(config.notifications?.vapidPublicKey || "").trim();
+  if (!publicKey) return "foreground-only";
+  const registration = await navigator.serviceWorker.ready;
+  const existing = await registration.pushManager.getSubscription();
+  const subscription = existing || await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: decodeVapidKey(publicKey)
+  });
+  await savePushSubscription(subscription);
+  return "push";
+}
+
+async function sendTestNotification() {
+  const mode = await enablePushNotifications();
+  if (mode === "denied" || mode === "unsupported") return mode;
+  await deliverSystemReminder({
+    key: `daily-os-test-${Date.now()}`,
+    title: "Daily OS · уведомления работают",
+    body: mode === "push" ? "Фоновая push-подписка активна." : "Уведомления работают, пока Daily OS активен.",
+    url: "/?view=calendar"
+  });
+  return mode;
+}
+
 function notificationPermissionLabel() {
   if (!("Notification" in window)) return "Системные уведомления не поддерживаются этим браузером.";
   if (Notification.permission === "granted") return "Системные уведомления включены.";
@@ -2924,17 +2985,27 @@ function scheduleSystemReminders() {
   };
 
   state.dailyPlan.timeBlocks.forEach((block) => {
-    if (block.reminderMinutes === null || block.reminderMinutes === undefined || block.reminderMinutes === "") return;
     calendarBlockOccurrenceDates(block, dates).forEach((date) => {
       const startsAt = new Date(`${date}T${block.start}:00`).getTime();
-      const notifyAt = startsAt - Number(block.reminderMinutes || 0) * 60 * 1000;
-      schedule({
-        key: `daily-os-block-${block.id}-${date}-${block.start}`,
-        title: block.title,
-        body: `Блок начнётся в ${block.start}`,
-        notifyAt,
-        url: "/"
-      });
+      const endsAt = new Date(`${date}T${block.end}:00`).getTime();
+      if (block.reminderMinutes !== null && block.reminderMinutes !== undefined && block.reminderMinutes !== "") {
+        schedule({
+          key: `daily-os-block-start-${block.id}-${date}-${block.start}`,
+          title: block.title,
+          body: Number(block.reminderMinutes) === 0 ? `Пора начать · до ${block.end}` : `Начало в ${block.start} · до ${block.end}`,
+          notifyAt: startsAt - Number(block.reminderMinutes || 0) * 60 * 1000,
+          url: `/?view=calendar&block=${encodeURIComponent(block.id)}`
+        });
+      }
+      if (block.endReminderMinutes !== null && block.endReminderMinutes !== undefined && block.endReminderMinutes !== "") {
+        schedule({
+          key: `daily-os-block-end-${block.id}-${date}-${block.end}`,
+          title: block.title,
+          body: Number(block.endReminderMinutes) === 0 ? "Блок завершён · зафиксируй результат" : `Завершение в ${block.end}`,
+          notifyAt: endsAt - Number(block.endReminderMinutes || 0) * 60 * 1000,
+          url: `/?view=calendar&block=${encodeURIComponent(block.id)}`
+        });
+      }
     });
   });
 
@@ -3641,10 +3712,11 @@ function renderSimpleDetail(meta) {
           <option value="weekdays" ${calendarBlock.recurrence === "weekdays" ? "selected" : ""}>По будням</option>
           <option value="weekly" ${calendarBlock.recurrence === "weekly" ? "selected" : ""}>Каждую неделю</option>
         </select></label>
-        <label><span>Напоминание</span><select data-calendar-block-field="reminderMinutes">${renderReminderOptions(calendarBlock.reminderMinutes)}</select></label>
+        <label><span>Перед началом</span><select data-calendar-block-field="reminderMinutes">${renderReminderOptions(calendarBlock.reminderMinutes)}</select></label>
       </div>
+      <label><span>Перед завершением</span><select data-calendar-block-field="endReminderMinutes">${renderEndReminderOptions(calendarBlock.endReminderMinutes)}</select></label>
       <label><span>Комментарий</span><textarea data-calendar-block-field="nextAction" placeholder="Что должно произойти в этом блоке">${escapeHtml(calendarBlock.nextAction || "")}</textarea></label>
-      ${calendarBlock.reminderMinutes !== null && calendarBlock.reminderMinutes !== undefined ? `<p class="calendar-notification-state">${escapeHtml(notificationPermissionLabel())}</p>` : ""}
+      <div class="calendar-notification-controls"><p class="calendar-notification-state">${escapeHtml(notificationPermissionLabel())}</p><div><button type="button" data-notification-action="enable">Включить системные</button><button type="button" data-notification-action="test">Проверить</button></div></div>
       <p class="calendar-block-hint">Блок сохраняется автоматически. Диапазон дат создаёт одинаковый интервал ${escapeHtml(calendarBlock.start)}–${escapeHtml(calendarBlock.end)} в каждом выбранном дне.</p>
       <button type="button" class="danger-text calendar-block-delete" data-simple-action="delete-calendar-block">Удалить блок</button>
     </section>`;
@@ -4156,6 +4228,32 @@ document.addEventListener("click", (event) => {
   saveState();
 }, true);
 
+document.addEventListener("click", async (event) => {
+  const notificationAction = event.target.closest?.("[data-notification-action]");
+  if (!notificationAction || !document.querySelector("#simpleApp")?.contains(notificationAction)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  notificationAction.disabled = true;
+  try {
+    const result = notificationAction.dataset.notificationAction === "test"
+      ? await sendTestNotification()
+      : await enablePushNotifications();
+    const detail = result === "push"
+      ? "Фоновая push-подписка активна."
+      : result === "granted" || result === "foreground-only"
+        ? "Системные уведомления включены; фоновая доставка ожидает серверную настройку."
+        : result === "denied"
+          ? "Разрешение отключено в настройках системы или браузера."
+          : "Системные уведомления недоступны на этом устройстве.";
+    state.assistantActions.unshift(action("Уведомления календаря", detail, result === "denied" ? "needs_review" : "confirmed"));
+    scheduleSystemReminders();
+    saveState();
+  } catch (error) {
+    state.assistantActions.unshift(action("Push-подписка не сохранена", error instanceof Error ? error.message : "Неизвестная ошибка", "needs_review"));
+    saveState();
+  }
+}, true);
+
 function handleTodayWorkbenchClick(target) {
   if (currentSimpleModule() !== "tasks" || state.settings.activeView !== "today") return false;
 
@@ -4326,12 +4424,9 @@ function handleTodayWorkbenchChange(target) {
     const field = calendarBlockField.dataset.calendarBlockField;
     const value = calendarBlockField.value;
     if (["title", "date", "endDate", "start", "end", "nextAction", "recurrence"].includes(field)) block[field] = value;
-    if (field === "reminderMinutes") {
-      block.reminderMinutes = value === "" ? null : Number(value);
-      if (value !== "") requestReminderPermission().then(() => {
-        scheduleSystemReminders();
-        renderSimpleApp();
-      });
+    if (["reminderMinutes", "endReminderMinutes"].includes(field)) {
+      block[field] = value === "" ? null : Number(value);
+      scheduleSystemReminders();
     }
     if (!block.endDate || block.endDate < block.date) block.endDate = block.date;
     if (!block.title.trim()) block.title = "Новый блок";
@@ -5402,12 +5497,9 @@ document.querySelector("#simpleApp")?.addEventListener("change", (event) => {
     const field = calendarBlockField.dataset.calendarBlockField;
     const value = calendarBlockField.value;
     if (["title", "date", "endDate", "start", "end", "nextAction", "recurrence"].includes(field)) block[field] = value;
-    if (field === "reminderMinutes") {
-      block.reminderMinutes = value === "" ? null : Number(value);
-      if (value !== "") requestReminderPermission().then(() => {
-        scheduleSystemReminders();
-        renderSimpleApp();
-      });
+    if (["reminderMinutes", "endReminderMinutes"].includes(field)) {
+      block[field] = value === "" ? null : Number(value);
+      scheduleSystemReminders();
     }
     if (!block.endDate || block.endDate < block.date) block.endDate = block.date;
     if (!block.title.trim()) block.title = "Новый блок";
@@ -6239,6 +6331,16 @@ window.addEventListener("storage", (event) => {
 window.matchMedia?.("(prefers-color-scheme: dark)")?.addEventListener?.("change", () => {
   if (state.settings.appearanceMode === "system") renderSimpleApp();
 });
+
+const launchParams = new URLSearchParams(window.location.search);
+if (launchParams.get("view") === "calendar") {
+  state.ui.simpleModule = "calendar";
+  state.settings.activeView = "today";
+  const blockId = launchParams.get("block");
+  if (blockId && state.dailyPlan.timeBlocks.some((block) => block.id === blockId)) {
+    state.ui.selectedCalendarBlockId = blockId;
+  }
+}
 
 render();
 initAuth();

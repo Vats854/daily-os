@@ -1248,6 +1248,39 @@ body[data-auth="signed-in"] .simple-app {
   }
 }
 
+.calendar-notification-controls {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--core-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--core-surface) 78%, var(--core-canvas));
+}
+
+.calendar-notification-controls p {
+  margin: 0;
+}
+
+.calendar-notification-controls > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.calendar-notification-controls button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--core-line);
+  border-radius: 8px;
+  background: var(--core-control);
+  color: var(--core-text);
+  font-weight: 700;
+}
+
+.calendar-notification-controls button:hover {
+  background: var(--core-control-hover);
+}
+
 /* v207: inspectors overlay the workspace on laptop widths instead of crushing it. */
 @media (min-width: 781px) and (max-width: 1399px) {
   body[data-auth] .simple-app.detail-open {
@@ -7854,5 +7887,149 @@ body,
   .simple-app[data-design="soft-tech"] .simple-icon-rail [data-simple-module="projects"],
   .simple-app[data-design="soft-tech"] .simple-icon-rail [data-simple-module="log"] {
     display: grid;
+  }
+}
+
+/* v216: final containment contract for the active Daily OS shell. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body[data-auth] .simple-app[data-design="soft-tech"] {
+  grid-template-columns: 56px 228px minmax(0, 1fr);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.simple-app[data-design="soft-tech"] > *,
+.simple-app[data-design="soft-tech"] .simple-main,
+.simple-app[data-design="soft-tech"] .simple-list,
+.simple-app[data-design="soft-tech"] .simple-main-head,
+.simple-app[data-design="soft-tech"] .simple-head-actions,
+.simple-app[data-design="soft-tech"] .simple-composer {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.simple-app[data-design="soft-tech"]:not(.detail-open) > .simple-detail {
+  display: none;
+}
+
+body[data-auth] .simple-app[data-design="soft-tech"].detail-open {
+  grid-template-columns: 56px 228px minmax(0, 1fr) minmax(320px, 380px);
+}
+
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-main {
+  padding: 28px clamp(24px, 3vw, 48px) 48px;
+  overflow-x: hidden;
+}
+
+.simple-app[data-design="soft-tech"][data-module="projects"][data-color-mode="dark"] .simple-main-head {
+  border-color: var(--core-line);
+  background: #1c2228;
+  color: var(--core-text);
+}
+
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-list {
+  width: 100%;
+  max-width: none;
+  padding-inline: 0;
+}
+
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-workspace,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-canvas,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-hero > div,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-grid > section,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-task-tools > *,
+.simple-app[data-design="soft-tech"][data-module="projects"] form,
+.simple-app[data-design="soft-tech"][data-module="projects"] input,
+.simple-app[data-design="soft-tech"][data-module="projects"] textarea,
+.simple-app[data-design="soft-tech"][data-module="projects"] select {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-journey-track {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.simple-app[data-design="soft-tech"][data-view="today"] .today-plan-workbench,
+.simple-app[data-design="soft-tech"][data-view="today"] .today-focus-line,
+.simple-app[data-design="soft-tech"][data-view="today"] .today-timeline,
+.simple-app[data-design="soft-tech"][data-view="today"] .today-unscheduled,
+.simple-app[data-design="soft-tech"][data-module="habits"] .simple-habit-row,
+.simple-app[data-design="soft-tech"][data-module="habits"] .simple-habit-copy,
+.simple-app[data-design="soft-tech"][data-module="calendar"] .calendar-workspace,
+.simple-app[data-design="soft-tech"][data-module="calendar"] .calendar-toolbar,
+.simple-app[data-design="soft-tech"][data-module="calendar"] .calendar-unscheduled,
+.simple-app[data-design="soft-tech"][data-module="calendar"] .calendar-task-lane {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 1439px) and (min-width: 781px) {
+  body[data-auth] .simple-app[data-design="soft-tech"].detail-open {
+    grid-template-columns: 56px 228px minmax(0, 1fr);
+  }
+
+  .simple-app[data-design="soft-tech"].detail-open > .simple-detail {
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: 30;
+    display: block;
+    width: min(380px, calc(100vw - 56px));
+    max-width: 100%;
+    box-shadow: -12px 0 34px rgb(23 32 51 / 14%);
+  }
+}
+
+@media (max-width: 1100px) and (min-width: 781px) {
+  body[data-auth] .simple-app[data-design="soft-tech"],
+  body[data-auth] .simple-app[data-design="soft-tech"].detail-open {
+    grid-template-columns: 56px 200px minmax(0, 1fr);
+  }
+
+  .simple-app[data-design="soft-tech"] .simple-main,
+  .simple-app[data-design="soft-tech"][data-view="today"] .simple-main,
+  .simple-app[data-design="soft-tech"][data-module="habits"] .simple-main,
+  .simple-app[data-design="soft-tech"][data-module="calendar"] .simple-main,
+  .simple-app[data-design="soft-tech"][data-module="projects"] .simple-main {
+    padding-inline: 24px;
+  }
+}
+
+@media (max-width: 780px) {
+  body[data-auth] .simple-app[data-design="soft-tech"],
+  body[data-auth] .simple-app[data-design="soft-tech"].detail-open {
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .simple-app[data-design="soft-tech"] .simple-main-head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .simple-app[data-design="soft-tech"] .simple-head-actions,
+  .simple-app[data-design="soft-tech"] .simple-composer {
+    flex-wrap: wrap;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .simple-app[data-design="soft-tech"] .simple-search-shell {
+    width: 100%;
+    max-width: none;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="projects"] .simple-main {
+    padding: 20px 16px 84px;
   }
 }

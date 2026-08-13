@@ -75,6 +75,9 @@ function publicConfig() {
     },
     auth: {
       provider: "github"
+    },
+    notifications: {
+      vapidPublicKey: process.env.VAPID_PUBLIC_KEY || ""
     }
   };
 }
