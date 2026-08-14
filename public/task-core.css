@@ -8277,6 +8277,12 @@ body[data-auth] .simple-app[data-design="soft-tech"].detail-open {
   opacity: .78;
 }
 
+.simple-app[data-design="soft-tech"][data-module="notes"][data-color-mode="dark"] .simple-notes-folder-menu-button img,
+.simple-app[data-design="soft-tech"][data-module="notes"][data-color-mode="dark"] .simple-list-editor-menu .simple-list-choice-row img {
+  filter: invert(1);
+  opacity: .82;
+}
+
 .simple-app[data-design="soft-tech"][data-module="notes"] .simple-note-title {
   min-height: 54px !important;
   max-height: 96px;
@@ -8296,14 +8302,24 @@ body[data-auth] .simple-app[data-design="soft-tech"].detail-open {
 .simple-app[data-design="soft-tech"][data-module="notes"] .simple-detail-card textarea.simple-note-body {
   min-height: 280px;
   margin: 0;
-  padding: 20px 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+  padding: 18px;
+  border: 1px solid var(--core-line);
+  border-radius: 8px;
+  background: var(--core-control);
   color: var(--core-text);
   font-family: inherit;
   font-size: 16px;
   line-height: 1.65;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-detail-card textarea.simple-note-body:hover {
+  border-color: color-mix(in srgb, var(--core-muted) 48%, var(--core-line));
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-detail-card textarea.simple-note-body:focus {
+  border-color: color-mix(in srgb, var(--core-blue) 72%, var(--core-line));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--core-blue) 12%, transparent);
+  outline: 0;
 }
 
 .simple-app[data-design="soft-tech"][data-module="notes"] .simple-note-tags {
