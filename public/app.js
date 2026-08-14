@@ -4696,7 +4696,7 @@ document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>
     return;
   }
 
-  const modeButton = event.target.closest("[data-appearance-mode]");
+  const modeButton = event.target.closest("button[data-appearance-mode]");
   if (modeButton) {
     state.settings.appearanceMode = modeButton.dataset.appearanceMode;
     saveState();

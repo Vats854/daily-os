@@ -37,6 +37,7 @@ const contracts = [
   ["sync diagnostics are accessible", html.includes('id="simpleSyncToggle"') && html.includes('id="simpleSyncPanel"') && app.includes("renderSimpleSyncPanel")],
   ["keyboard shortcuts are configurable and conflict-safe", html.includes('id="shortcutOptions"') && app.includes("defaultShortcuts") && app.includes("reservedShortcuts") && app.includes("recordingShortcutAction")],
   ["shortcut settings remain available on mobile", html.includes('id="simpleMobileAppearanceToggle"') && styles.includes(".simple-mobile-appearance-toggle") && styles.includes("max-height: calc(100dvh - 128px)")],
+  ["appearance mode handler only catches mode buttons", app.includes('event.target.closest("button[data-appearance-mode]")') && !app.includes('event.target.closest("[data-appearance-mode]")')],
   ["sync retry uses the safe queue", app.includes('data-simple-sync-action="retry"') && app.includes("queueCloudSave({ immediate: true })")],
   ["asset versions match", assetVersions.length === 3 && assetVersions.every((version) => version === workerVersion)],
   ["open detail grid overrides authenticated shell", styles.includes('body[data-auth] .simple-app.detail-open')],
