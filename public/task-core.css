@@ -8181,6 +8181,97 @@ body[data-auth] .simple-app[data-design="soft-tech"].detail-open {
   }
 }
 
+/* v227: Tasks use one calm top bar. The heading, search and account action
+   must share the available width without turning the header into a card. */
+.simple-app[data-design="soft-tech"][data-module="tasks"] .simple-main {
+  padding: 32px clamp(28px, 4vw, 64px) 52px;
+}
+
+.simple-app[data-design="soft-tech"][data-module="tasks"] .simple-main > .simple-main-head {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) auto;
+  align-items: start;
+  gap: 24px;
+  min-height: 0;
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.simple-app[data-design="soft-tech"][data-module="tasks"] .simple-main-head h1 {
+  font-size: clamp(32px, 2.4vw, 40px);
+  line-height: 1.05;
+}
+
+.simple-app[data-design="soft-tech"][data-module="tasks"] .simple-main-head p {
+  max-width: 640px;
+  margin-top: 8px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.simple-app[data-design="soft-tech"][data-module="tasks"] .simple-head-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  width: auto;
+  padding-top: 1px;
+}
+
+.simple-app[data-design="soft-tech"][data-module="tasks"] .simple-search-shell {
+  width: clamp(240px, 22vw, 320px);
+  min-width: 0;
+}
+
+.simple-app[data-design="soft-tech"][data-module="tasks"] #simpleSignOutButton,
+.simple-app[data-design="soft-tech"][data-module="tasks"] #simpleAuthButton {
+  flex: 0 0 auto;
+  min-width: 76px;
+  padding-inline: 16px;
+}
+
+.simple-app[data-design="soft-tech"] .simple-account > div:not(.simple-appearance-menu) {
+  overflow: hidden;
+}
+
+.simple-app[data-design="soft-tech"] .simple-sync-toggle {
+  width: 100%;
+}
+
+@media (max-width: 1180px) and (min-width: 781px) {
+  .simple-app[data-design="soft-tech"][data-module="tasks"] .simple-main > .simple-main-head {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="tasks"] .simple-head-actions {
+    justify-content: flex-start;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="tasks"] .simple-search-shell {
+    width: min(100%, 360px);
+  }
+}
+
+@media (max-width: 780px) {
+  .simple-app[data-design="soft-tech"][data-module="tasks"] .simple-main {
+    padding: 20px 16px 84px;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="tasks"] .simple-head-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    width: 100%;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="tasks"] .simple-search-shell {
+    width: 100%;
+  }
+}
+
 /* v225: one calm document system for the Notes index and editor. */
 .simple-app[data-design="soft-tech"][data-module="notes"] .simple-row[data-simple-object="note"] {
   min-height: 94px;

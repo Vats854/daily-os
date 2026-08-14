@@ -2410,11 +2410,11 @@ function renderSimpleApp() {
 
   const syncStatusLabels = {
     conflict: "локально сохранено · конфликт",
-    error: "сохранено на устройстве",
+    error: "сохранено",
     syncing: "сохраняю…",
     synced: "синхронизировано",
-    private: "сохранено на устройстве",
-    local: "сохранено на устройстве"
+    private: "сохранено",
+    local: "сохранено"
   };
   document.querySelector("#simpleSyncStatus").textContent = syncStatusLabels[cloudSync.status] || (cloudSync.session ? "синхронизировано" : "только устройство");
   document.querySelectorAll("#simpleSyncToggle, #simpleMobileSyncToggle").forEach((syncToggle) => {
