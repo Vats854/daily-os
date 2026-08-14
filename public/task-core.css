@@ -2195,17 +2195,17 @@ body[data-auth="signed-in"] {
     padding: 10px 10px;
     border: 1px solid var(--core-line);
     border-radius: 8px;
-    background: #ffffff;
+    background: var(--core-surface);
   }
 
   .simple-app[data-design="soft-tech"] .simple-row:hover {
-    background: #f7faf8;
-    border-color: #d7dfdc;
+    background: var(--core-hover);
+    border-color: var(--core-line-strong, var(--core-line));
   }
 
   .simple-app[data-design="soft-tech"] .simple-row.active {
-    background: #fbffdf;
-    border-color: color-mix(in srgb, var(--core-selected) 78%, #c9d2cf);
+    background: var(--core-selected);
+    border-color: color-mix(in srgb, var(--core-selected) 78%, var(--core-line));
   }
 
   .simple-app[data-design="soft-tech"] .simple-row.active::before {
@@ -5044,7 +5044,7 @@ body[data-auth] .simple-app[data-module="notes"].detail-open {
   grid-column: 4;
   padding: 0;
   border-left: 0;
-  background: #fbfcfe;
+  background: var(--core-surface);
 }
 
 .simple-detail-card.simple-note-editor {
