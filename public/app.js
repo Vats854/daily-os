@@ -3809,12 +3809,12 @@ function renderSimpleDetail(meta) {
     const stats = noteDocumentStats(noteBody(noteItem));
     return `<section class="simple-detail-card simple-note-editor" data-note-id="${escapeHtml(noteItem.id)}">
       <div class="simple-note-editor-bar">
-        <div class="simple-note-path"><span>Заметки</span><b>/</b><select data-note-field="folderId" aria-label="Список заметки" title="Переместить в список"><option value="">Без списка</option>${noteFolders().map(({ id, title }) => `<option value="${escapeHtml(id)}" ${noteItem.folderId === id ? "selected" : ""}>${escapeHtml(title)}</option>`).join("")}</select></div>
+        <label class="simple-note-path"><span>Список</span><select data-note-field="folderId" aria-label="Список заметки" title="Переместить в список"><option value="">Без списка</option>${noteFolders().map(({ id, title }) => `<option value="${escapeHtml(id)}" ${noteItem.folderId === id ? "selected" : ""}>${escapeHtml(title)}</option>`).join("")}</select></label>
         <span class="simple-save-hint" data-note-save-status>Сохранено</span>
         <div class="simple-note-menu-wrap"><button type="button" class="simple-detail-menu-button ${state.ui.noteMenuOpen ? "active" : ""}" data-simple-action="note-menu" aria-label="Действия с заметкой"><img src="/icons/ellipsis.svg" alt="" /></button>${state.ui.noteMenuOpen ? `<div class="simple-note-menu" role="menu"><button class="danger-text" type="button" data-simple-action="delete-note">Удалить заметку</button></div>` : ""}</div>
         <button type="button" class="simple-detail-close" data-simple-action="close-detail" aria-label="Закрыть заметку"><img src="/icons/x.svg" alt="" /></button>
       </div>
-      <textarea class="simple-note-title" data-note-field="title" rows="2" placeholder="Без названия">${escapeHtml(noteTitle(noteItem))}</textarea>
+      <textarea class="simple-note-title" data-note-field="title" rows="1" placeholder="Без названия">${escapeHtml(noteTitle(noteItem))}</textarea>
       <div class="simple-note-formatbar" role="toolbar" aria-label="Форматирование заметки">
         <button type="button" data-note-command="heading" title="Заголовок">H2</button>
         <button type="button" data-note-command="bold" title="Жирный текст"><b>B</b></button>
