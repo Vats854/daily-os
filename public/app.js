@@ -2216,7 +2216,13 @@ function visibleNotes() {
     : folderId
       ? state.notes.filter((item) => item.folderId === folderId)
       : state.notes;
-  return [...notes].sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")));
+  return [...notes].sort((a, b) => {
+    const updatedOrder = String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || ""));
+    if (updatedOrder) return updatedOrder;
+    const createdOrder = String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+    if (createdOrder) return createdOrder;
+    return String(a.id || "").localeCompare(String(b.id || ""));
+  });
 }
 
 function createNoteFolder(title) {
