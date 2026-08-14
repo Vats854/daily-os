@@ -2373,35 +2373,7 @@ function renderSimpleNav(module, counts) {
   }
 
   if (module === "notes") {
-    const unfiledCount = state.notes.filter((item) => !item.folderId).length;
-    return `<section>
-      <span class="simple-nav-label">Библиотека</span>
-      <button type="button" class="simple-system-item ${!state.ui?.selectedNoteFolderId ? "active" : ""}" data-note-folder=""><img src="/icons/notebook-pen.svg" alt="" /><span>Все заметки</span><strong>${counts.notes}</strong></button>
-      <button type="button" class="simple-system-item ${state.ui?.selectedNoteFolderId === "unfiled" ? "active" : ""}" data-note-folder="unfiled"><img src="/icons/list-todo.svg" alt="" /><span>Без списка</span><strong>${unfiledCount}</strong></button>
-    </section>
-    <section>
-      <div class="simple-nav-section-head">
-        <span class="simple-nav-label">Списки заметок</span>
-        <button type="button" class="simple-add-list-button" data-note-folder-action="create" title="Создать список заметок" aria-label="Создать список заметок">+</button>
-      </div>
-      ${state.ui?.creatingNoteFolder ? `<form class="simple-list-form" id="noteFolderCreateForm"><input name="title" type="text" placeholder="Новый список" aria-label="Название нового списка заметок" autofocus /><button type="submit" aria-label="Создать список">✓</button><button type="button" data-note-folder-action="cancel-create" aria-label="Отменить создание">×</button></form>` : ""}
-      ${noteFolders().map((folder) => {
-        const count = state.notes.filter((item) => item.folderId === folder.id).length;
-        if (state.ui?.renamingNoteFolderId === folder.id) {
-          return `<form class="simple-list-form" data-note-folder-id="${escapeHtml(folder.id)}" data-note-folder-form="rename"><input name="title" value="${escapeHtml(folder.title)}" autofocus /><button type="submit">OK</button><button type="button" data-note-folder-action="cancel-rename">×</button></form>`;
-        }
-        return `<div class="simple-list-row ${state.ui?.selectedNoteFolderId === folder.id ? "active" : ""} ${state.ui?.noteFolderMenuId === folder.id ? "menu-open" : ""}" data-note-folder-id="${escapeHtml(folder.id)}">
-          <button type="button" data-note-folder="${escapeHtml(folder.id)}"><span class="simple-list-token ${escapeHtml(folder.tone)}"><img src="/icons/${escapeHtml(folder.icon)}.svg" alt="" /></span><span class="simple-list-title">${escapeHtml(folder.title)}</span><strong>${count}</strong></button>
-          <button type="button" class="simple-list-action" data-note-folder-action="menu" aria-label="Действия с папкой ${escapeHtml(folder.title)}"><img src="/icons/ellipsis.svg" alt="" /></button>
-          ${state.ui?.noteFolderMenuId === folder.id ? `<div class="simple-list-menu simple-list-editor-menu">
-            <button type="button" data-note-folder-action="rename">Переименовать</button>
-            <span>Иконка</span><div class="simple-list-choice-row">${listIcons.map((iconName) => `<button type="button" class="${folder.icon === iconName ? "selected" : ""}" data-note-folder-action="set-icon" data-folder-icon="${escapeHtml(iconName)}" aria-label="${escapeHtml(iconName)}"><img src="/icons/${escapeHtml(iconName)}.svg" alt="" /></button>`).join("")}</div>
-            <span>Цвет</span><div class="simple-list-choice-row">${listTones.map((tone) => `<button type="button" class="${folder.tone === tone ? "selected" : ""}" data-note-folder-action="set-tone" data-folder-tone="${tone}" aria-label="${tone}"><i class="simple-tone-dot ${tone}"></i></button>`).join("")}</div>
-            <button type="button" class="danger-text" data-note-folder-action="delete">Удалить</button>
-          </div>` : ""}
-        </div>`;
-      }).join("")}
-    </section>`;
+    return "";
   }
 
   const moduleNav = {
@@ -3544,7 +3516,37 @@ function renderSimpleNotesLibrary(notes) {
   const body = notes.length
     ? notes.map(renderSimpleNoteRow).join("")
     : `<div class="simple-empty simple-notes-empty"><strong>Здесь пока тихо</strong><span>Создай первую заметку в этой папке — она сразу откроется справа.</span></div>`;
+  const unfiledCount = state.notes.filter((item) => !item.folderId).length;
+  const folderControls = noteFolders().map((folder) => {
+    const count = state.notes.filter((item) => item.folderId === folder.id).length;
+    if (state.ui?.renamingNoteFolderId === folder.id) {
+      return `<form class="simple-notes-folder-form" data-note-folder-id="${escapeHtml(folder.id)}" data-note-folder-form="rename"><input name="title" value="${escapeHtml(folder.title)}" aria-label="Новое название списка" autofocus /><button type="submit">OK</button><button type="button" data-note-folder-action="cancel-rename" aria-label="Отменить">×</button></form>`;
+    }
+    return `<button type="button" class="simple-notes-folder-filter ${state.ui?.selectedNoteFolderId === folder.id ? "active" : ""}" data-note-folder-filter data-note-folder="${escapeHtml(folder.id)}"><span class="simple-list-token ${escapeHtml(folder.tone)}"><img src="/icons/${escapeHtml(folder.icon)}.svg" alt="" /></span><span>${escapeHtml(folder.title)}</span><strong>${count}</strong></button>`;
+  }).join("");
+  const selectedFolderItem = noteFolders().find((folder) => folder.id === selectedFolder);
+  const selectedFolderActions = selectedFolderItem
+    ? `<div class="simple-notes-folder-actions ${state.ui?.noteFolderMenuId === selectedFolderItem.id ? "menu-open" : ""}" data-note-folder-id="${escapeHtml(selectedFolderItem.id)}">
+      <button type="button" class="simple-notes-folder-menu-button" data-note-folder-action="menu" aria-label="Действия с папкой ${escapeHtml(selectedFolderItem.title)}"><img src="/icons/ellipsis.svg" alt="" /></button>
+      ${state.ui?.noteFolderMenuId === selectedFolderItem.id ? `<div class="simple-list-menu simple-list-editor-menu">
+        <button type="button" data-note-folder-action="rename">Переименовать</button>
+        <span>Иконка</span><div class="simple-list-choice-row">${listIcons.map((iconName) => `<button type="button" class="${selectedFolderItem.icon === iconName ? "selected" : ""}" data-note-folder-action="set-icon" data-folder-icon="${escapeHtml(iconName)}" aria-label="${escapeHtml(iconName)}"><img src="/icons/${escapeHtml(iconName)}.svg" alt="" /></button>`).join("")}</div>
+        <span>Цвет</span><div class="simple-list-choice-row">${listTones.map((tone) => `<button type="button" class="${selectedFolderItem.tone === tone ? "selected" : ""}" data-note-folder-action="set-tone" data-folder-tone="${tone}" aria-label="${tone}"><i class="simple-tone-dot ${tone}"></i></button>`).join("")}</div>
+        <button type="button" class="danger-text" data-note-folder-action="delete">Удалить</button>
+      </div>` : ""}
+    </div>`
+    : "";
   return `<section class="simple-notes-library" aria-label="Библиотека заметок">
+    <div class="simple-notes-folder-toolbar" aria-label="Списки заметок">
+      <div class="simple-notes-folder-scroll">
+        <button type="button" class="simple-notes-folder-filter ${!selectedFolder ? "active" : ""}" data-note-folder-filter data-note-folder=""><span>Все</span><strong>${state.notes.length}</strong></button>
+        <button type="button" class="simple-notes-folder-filter ${selectedFolder === "unfiled" ? "active" : ""}" data-note-folder-filter data-note-folder="unfiled"><span>Без списка</span><strong>${unfiledCount}</strong></button>
+        ${folderControls}
+      </div>
+      ${selectedFolderActions}
+      <button type="button" class="simple-notes-folder-add" data-note-folder-action="create" title="Создать список заметок" aria-label="Создать список заметок">+</button>
+    </div>
+    ${state.ui?.creatingNoteFolder ? `<form class="simple-notes-folder-form simple-notes-folder-create" id="noteFolderCreateForm"><input name="title" type="text" placeholder="Новый список" aria-label="Название нового списка заметок" autofocus /><button type="submit" aria-label="Создать список">✓</button><button type="button" data-note-folder-action="cancel-create" aria-label="Отменить создание">×</button></form>` : ""}
     <header class="simple-notes-library-head"><div><span>${escapeHtml(folderTitle)}</span><small>Последние изменения</small></div><strong>${notes.length}</strong></header>
     <div class="simple-notes-index">${body}</div>
   </section>`;
@@ -4512,6 +4514,49 @@ document.addEventListener("input", (event) => {
 }, true);
 
 document.querySelector("#simpleApp")?.addEventListener("click", async (event) => {
+  const noteFolderFilter = event.target.closest?.("[data-note-folder-filter]");
+  if (noteFolderFilter) {
+    state.ui.selectedNoteFolderId = noteFolderFilter.dataset.noteFolder || "";
+    state.ui.selectedNoteId = null;
+    state.ui.noteFolderMenuId = "";
+    saveState();
+    return;
+  }
+
+  const noteFolderToolbarAction = event.target.closest?.("[data-note-folder-action]");
+  if (noteFolderToolbarAction) {
+    const actionType = noteFolderToolbarAction.dataset.noteFolderAction;
+    const folderRoot = noteFolderToolbarAction.closest("[data-note-folder-id]");
+    if (actionType === "create") {
+      state.ui.creatingNoteFolder = true;
+      state.ui.renamingNoteFolderId = "";
+    }
+    if (actionType === "cancel-create") state.ui.creatingNoteFolder = false;
+    if (actionType === "menu" && folderRoot?.dataset.noteFolderId) {
+      state.ui.noteFolderMenuId = state.ui.noteFolderMenuId === folderRoot.dataset.noteFolderId ? "" : folderRoot.dataset.noteFolderId;
+    }
+    if (actionType === "rename" && folderRoot?.dataset.noteFolderId) {
+      state.ui.renamingNoteFolderId = folderRoot.dataset.noteFolderId;
+      state.ui.creatingNoteFolder = false;
+      state.ui.noteFolderMenuId = "";
+    }
+    if (actionType === "set-icon" && folderRoot?.dataset.noteFolderId && listIcons.includes(noteFolderToolbarAction.dataset.folderIcon)) {
+      const folder = noteFolders().find((item) => item.id === folderRoot.dataset.noteFolderId);
+      if (folder) folder.icon = noteFolderToolbarAction.dataset.folderIcon;
+    }
+    if (actionType === "set-tone" && folderRoot?.dataset.noteFolderId && listTones.includes(noteFolderToolbarAction.dataset.folderTone)) {
+      const folder = noteFolders().find((item) => item.id === folderRoot.dataset.noteFolderId);
+      if (folder) folder.tone = noteFolderToolbarAction.dataset.folderTone;
+    }
+    if (actionType === "cancel-rename") state.ui.renamingNoteFolderId = "";
+    if (actionType === "delete" && folderRoot?.dataset.noteFolderId) {
+      state.ui.pendingDeleteNoteFolderId = folderRoot.dataset.noteFolderId;
+      state.ui.noteFolderMenuId = "";
+    }
+    saveState();
+    return;
+  }
+
   const noteCommand = event.target.closest?.("[data-note-command]");
   if (noteCommand) {
     const noteRoot = noteCommand.closest("[data-note-id]");
@@ -4790,49 +4835,6 @@ document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>
     state.ui.selectedNoteId = null;
     state.ui.listMenuId = "";
     state.ui.taskMenuOpen = false;
-    saveState();
-    return;
-  }
-
-  const noteFolderButton = event.target.closest("[data-note-folder]");
-  if (noteFolderButton) {
-    state.ui.selectedNoteFolderId = noteFolderButton.dataset.noteFolder || "";
-    state.ui.selectedNoteId = null;
-    state.ui.noteFolderMenuId = "";
-    saveState();
-    return;
-  }
-
-  const noteFolderAction = event.target.closest("[data-note-folder-action]");
-  if (noteFolderAction) {
-    const actionType = noteFolderAction.dataset.noteFolderAction;
-    const folderRoot = noteFolderAction.closest("[data-note-folder-id]");
-    if (actionType === "create") {
-      state.ui.creatingNoteFolder = true;
-      state.ui.renamingNoteFolderId = "";
-    }
-    if (actionType === "cancel-create") state.ui.creatingNoteFolder = false;
-    if (actionType === "menu" && folderRoot?.dataset.noteFolderId) {
-      state.ui.noteFolderMenuId = state.ui.noteFolderMenuId === folderRoot.dataset.noteFolderId ? "" : folderRoot.dataset.noteFolderId;
-    }
-    if (actionType === "rename" && folderRoot?.dataset.noteFolderId) {
-      state.ui.renamingNoteFolderId = folderRoot.dataset.noteFolderId;
-      state.ui.creatingNoteFolder = false;
-      state.ui.noteFolderMenuId = "";
-    }
-    if (actionType === "set-icon" && folderRoot?.dataset.noteFolderId && listIcons.includes(noteFolderAction.dataset.folderIcon)) {
-      const folder = noteFolders().find((item) => item.id === folderRoot.dataset.noteFolderId);
-      if (folder) folder.icon = noteFolderAction.dataset.folderIcon;
-    }
-    if (actionType === "set-tone" && folderRoot?.dataset.noteFolderId && listTones.includes(noteFolderAction.dataset.folderTone)) {
-      const folder = noteFolders().find((item) => item.id === folderRoot.dataset.noteFolderId);
-      if (folder) folder.tone = noteFolderAction.dataset.folderTone;
-    }
-    if (actionType === "cancel-rename") state.ui.renamingNoteFolderId = "";
-    if (actionType === "delete" && folderRoot?.dataset.noteFolderId) {
-      state.ui.pendingDeleteNoteFolderId = folderRoot.dataset.noteFolderId;
-      state.ui.noteFolderMenuId = "";
-    }
     saveState();
     return;
   }

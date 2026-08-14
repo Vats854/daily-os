@@ -8152,17 +8152,16 @@ body[data-auth] .simple-app[data-design="soft-tech"].detail-open {
   body[data-auth] .simple-app[data-design="soft-tech"][data-module="notes"].detail-open {
     grid-template-columns:
       56px
-      clamp(180px, 18vw, 228px)
-      clamp(280px, 24vw, 400px)
-      minmax(384px, 1fr);
+      clamp(360px, 29vw, 420px)
+      minmax(0, 1fr);
   }
 
   .simple-app[data-design="soft-tech"][data-module="notes"] .simple-list-rail {
-    grid-column: 2;
+    display: none;
   }
 
   .simple-app[data-design="soft-tech"][data-module="notes"] .simple-main {
-    grid-column: 3;
+    grid-column: 2;
   }
 
   .simple-app[data-design="soft-tech"][data-module="notes"]:not(.detail-open) > .simple-detail,
@@ -8172,12 +8171,173 @@ body[data-auth] .simple-app[data-design="soft-tech"].detail-open {
     inset: auto;
     z-index: auto;
     display: block;
-    grid-column: 4;
+    grid-column: 3;
     width: auto;
     max-width: none;
     padding: 0;
     border-left: 0;
     background: var(--core-surface);
     box-shadow: none;
+  }
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"][data-color-mode="dark"] {
+  --core-bg: #141922;
+  --core-surface: #191f2a;
+  --core-line: #2b3442;
+  --core-text: #f2f5fa;
+  --core-muted: #9aa6b8;
+  --core-blue: #79a7ff;
+  --core-blue-soft: #203150;
+  --core-canvas: #141922;
+  --core-rail: #10151d;
+  --core-sidebar: #171d27;
+  --core-hover: #202938;
+  --core-selected: #213657;
+  --core-selected-text: #dce8ff;
+  --core-control: #1b2330;
+  --core-control-hover: #242e3d;
+}
+
+@media (max-width: 899px) {
+  .simple-app[data-design="soft-tech"][data-module="notes"],
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-main,
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-main-head {
+    color: var(--core-text);
+    background: var(--core-canvas);
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-main-head h1 {
+    color: var(--core-text);
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-main-head p {
+    color: var(--core-muted);
+  }
+}
+
+/* v222: Notes is a stable library + document workspace; folders live in the library. */
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-notes-folder-toolbar {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 32px;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--core-line);
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-notes-folder-scroll {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 1px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-notes-folder-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.simple-notes-folder-actions {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.simple-notes-folder-filter,
+.simple-notes-folder-menu-button,
+.simple-notes-folder-add {
+  min-height: 30px;
+  border: 1px solid var(--core-line);
+  border-radius: 8px;
+  color: var(--core-muted);
+  background: var(--core-control);
+}
+
+.simple-notes-folder-filter {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+
+.simple-notes-folder-filter strong {
+  color: var(--core-muted);
+  font-size: 10px;
+}
+
+.simple-notes-folder-filter.active {
+  color: var(--core-text);
+  border-color: var(--core-blue);
+  background: var(--core-selected);
+}
+
+.simple-notes-folder-menu-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  min-height: 30px;
+  padding: 0;
+  border: 1px solid var(--core-line);
+  border-radius: 8px;
+}
+
+.simple-notes-folder-menu-button img {
+  width: 13px;
+  height: 13px;
+}
+
+.simple-notes-folder-add {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  padding: 0;
+  color: var(--core-text);
+  font-size: 18px;
+}
+
+.simple-notes-folder-actions .simple-list-menu {
+  top: calc(100% + 6px);
+  right: 0;
+  left: auto;
+  z-index: 20;
+  min-width: 220px;
+}
+
+.simple-notes-folder-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  min-width: 240px;
+}
+
+.simple-notes-folder-form input,
+.simple-notes-folder-form button {
+  min-height: 32px;
+  border: 1px solid var(--core-line);
+  border-radius: 7px;
+  color: var(--core-text);
+  background: var(--core-control);
+}
+
+.simple-notes-folder-create {
+  margin: -4px 0 12px;
+}
+
+@media (min-width: 900px) {
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-main {
+    min-width: 0;
+    padding: 24px 20px 36px;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-detail-card.simple-note-editor {
+    padding-inline: clamp(32px, 5vw, 88px);
   }
 }
