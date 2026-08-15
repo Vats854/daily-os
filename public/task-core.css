@@ -1248,6 +1248,39 @@ body[data-auth="signed-in"] .simple-app {
   }
 }
 
+.calendar-notification-controls {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--core-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--core-surface) 78%, var(--core-canvas));
+}
+
+.calendar-notification-controls p {
+  margin: 0;
+}
+
+.calendar-notification-controls > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.calendar-notification-controls button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--core-line);
+  border-radius: 8px;
+  background: var(--core-control);
+  color: var(--core-text);
+  font-weight: 700;
+}
+
+.calendar-notification-controls button:hover {
+  background: var(--core-control-hover);
+}
+
 /* v207: inspectors overlay the workspace on laptop widths instead of crushing it. */
 @media (min-width: 781px) and (max-width: 1399px) {
   body[data-auth] .simple-app.detail-open {
@@ -2162,17 +2195,17 @@ body[data-auth="signed-in"] {
     padding: 10px 10px;
     border: 1px solid var(--core-line);
     border-radius: 8px;
-    background: #ffffff;
+    background: var(--core-surface);
   }
 
   .simple-app[data-design="soft-tech"] .simple-row:hover {
-    background: #f7faf8;
-    border-color: #d7dfdc;
+    background: var(--core-hover);
+    border-color: var(--core-line-strong, var(--core-line));
   }
 
   .simple-app[data-design="soft-tech"] .simple-row.active {
-    background: #fbffdf;
-    border-color: color-mix(in srgb, var(--core-selected) 78%, #c9d2cf);
+    background: var(--core-selected);
+    border-color: color-mix(in srgb, var(--core-selected) 78%, var(--core-line));
   }
 
   .simple-app[data-design="soft-tech"] .simple-row.active::before {
@@ -5011,7 +5044,7 @@ body[data-auth] .simple-app[data-module="notes"].detail-open {
   grid-column: 4;
   padding: 0;
   border-left: 0;
-  background: #fbfcfe;
+  background: var(--core-surface);
 }
 
 .simple-detail-card.simple-note-editor {
@@ -7854,5 +7887,712 @@ body,
   .simple-app[data-design="soft-tech"] .simple-icon-rail [data-simple-module="projects"],
   .simple-app[data-design="soft-tech"] .simple-icon-rail [data-simple-module="log"] {
     display: grid;
+  }
+}
+
+/* v216: final containment contract for the active Daily OS shell. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body[data-auth] .simple-app[data-design="soft-tech"] {
+  grid-template-columns: 56px 228px minmax(0, 1fr);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.simple-app[data-design="soft-tech"] > *,
+.simple-app[data-design="soft-tech"] .simple-main,
+.simple-app[data-design="soft-tech"] .simple-list,
+.simple-app[data-design="soft-tech"] .simple-main-head,
+.simple-app[data-design="soft-tech"] .simple-head-actions,
+.simple-app[data-design="soft-tech"] .simple-composer {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.simple-app[data-design="soft-tech"]:not(.detail-open) > .simple-detail {
+  display: none;
+}
+
+body[data-auth] .simple-app[data-design="soft-tech"].detail-open {
+  grid-template-columns: 56px 228px minmax(0, 1fr) minmax(320px, 380px);
+}
+
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-main {
+  padding: 28px clamp(24px, 3vw, 48px) 48px;
+  overflow-x: hidden;
+}
+
+.simple-app[data-design="soft-tech"][data-module="projects"][data-color-mode="dark"] .simple-main-head {
+  border-color: var(--core-line);
+  background: #1c2228;
+  color: var(--core-text);
+}
+
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-list {
+  width: 100%;
+  max-width: none;
+  padding-inline: 0;
+}
+
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-workspace,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-canvas,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-hero > div,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-grid > section,
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-project-task-tools > *,
+.simple-app[data-design="soft-tech"][data-module="projects"] form,
+.simple-app[data-design="soft-tech"][data-module="projects"] input,
+.simple-app[data-design="soft-tech"][data-module="projects"] textarea,
+.simple-app[data-design="soft-tech"][data-module="projects"] select {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.simple-app[data-design="soft-tech"][data-module="projects"] .simple-journey-track {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.simple-app[data-design="soft-tech"][data-view="today"] .today-plan-workbench,
+.simple-app[data-design="soft-tech"][data-view="today"] .today-focus-line,
+.simple-app[data-design="soft-tech"][data-view="today"] .today-timeline,
+.simple-app[data-design="soft-tech"][data-view="today"] .today-unscheduled,
+.simple-app[data-design="soft-tech"][data-module="habits"] .simple-habit-row,
+.simple-app[data-design="soft-tech"][data-module="habits"] .simple-habit-copy,
+.simple-app[data-design="soft-tech"][data-module="calendar"] .calendar-workspace,
+.simple-app[data-design="soft-tech"][data-module="calendar"] .calendar-toolbar,
+.simple-app[data-design="soft-tech"][data-module="calendar"] .calendar-unscheduled,
+.simple-app[data-design="soft-tech"][data-module="calendar"] .calendar-task-lane {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 1439px) and (min-width: 781px) {
+  body[data-auth] .simple-app[data-design="soft-tech"].detail-open {
+    grid-template-columns: 56px 228px minmax(0, 1fr);
+  }
+
+  .simple-app[data-design="soft-tech"].detail-open > .simple-detail {
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: 30;
+    display: block;
+    width: min(380px, calc(100vw - 56px));
+    max-width: 100%;
+    box-shadow: -12px 0 34px rgb(23 32 51 / 14%);
+  }
+}
+
+@media (max-width: 1100px) and (min-width: 781px) {
+  body[data-auth] .simple-app[data-design="soft-tech"],
+  body[data-auth] .simple-app[data-design="soft-tech"].detail-open {
+    grid-template-columns: 56px 200px minmax(0, 1fr);
+  }
+
+  .simple-app[data-design="soft-tech"] .simple-main,
+  .simple-app[data-design="soft-tech"][data-view="today"] .simple-main,
+  .simple-app[data-design="soft-tech"][data-module="habits"] .simple-main,
+  .simple-app[data-design="soft-tech"][data-module="calendar"] .simple-main,
+  .simple-app[data-design="soft-tech"][data-module="projects"] .simple-main {
+    padding-inline: 24px;
+  }
+}
+
+@media (max-width: 780px) {
+  body[data-auth] .simple-app[data-design="soft-tech"],
+  body[data-auth] .simple-app[data-design="soft-tech"].detail-open {
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .simple-app[data-design="soft-tech"] .simple-main-head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .simple-app[data-design="soft-tech"] .simple-head-actions,
+  .simple-app[data-design="soft-tech"] .simple-composer {
+    flex-wrap: wrap;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .simple-app[data-design="soft-tech"] .simple-search-shell {
+    width: 100%;
+    max-width: none;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="projects"] .simple-main {
+    padding: 20px 16px 84px;
+  }
+}
+
+/* v219: Notes keeps a document index and editor instead of inheriting the task canvas. */
+@media (min-width: 781px) {
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-main {
+    grid-column: 3;
+    padding: 20px 16px 32px;
+    border-right: 1px solid var(--core-line);
+    background: var(--core-canvas);
+    overflow-y: auto;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-main-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    min-height: 0;
+    margin: 0 0 12px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-main-head h1 {
+    font-size: 26px;
+    line-height: 1.1;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-main-head p {
+    max-width: 34ch;
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-search-shell {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    min-height: 38px;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-composer {
+    grid-template-columns: minmax(0, 1fr) 40px;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-composer input {
+    min-height: 40px;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-composer button[type="submit"] {
+    justify-self: stretch;
+    width: 40px;
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-notes-library-head {
+    min-height: 40px;
+    padding: 0 8px 9px;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-list {
+    width: 100%;
+    max-width: none;
+    padding: 0;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-notes-index {
+    padding-top: 0;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-row[data-simple-object="note"] {
+    min-height: 82px;
+    margin: 0;
+    padding: 10px 8px;
+    border: 0;
+    border-bottom: 1px solid var(--core-line);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-row[data-simple-object="note"] + .simple-row {
+    margin-top: 0;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-note-preview {
+    min-height: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    -webkit-line-clamp: 1;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-row[data-simple-object="note"]:hover {
+    border-color: var(--core-line);
+    background: var(--core-hover);
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-row[data-simple-object="note"].active {
+    border-color: var(--core-line);
+    background: var(--core-selected);
+  }
+}
+
+@media (min-width: 900px) {
+  body[data-auth] .simple-app[data-design="soft-tech"][data-module="notes"],
+  body[data-auth] .simple-app[data-design="soft-tech"][data-module="notes"].detail-open {
+    grid-template-columns:
+      56px
+      clamp(360px, 29vw, 420px)
+      minmax(0, 1fr);
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-list-rail {
+    display: none;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-main {
+    grid-column: 2;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"]:not(.detail-open) > .simple-detail,
+  .simple-app[data-design="soft-tech"][data-module="notes"] > .simple-detail,
+  .simple-app[data-design="soft-tech"][data-module="notes"].detail-open > .simple-detail {
+    position: static;
+    inset: auto;
+    z-index: auto;
+    display: block;
+    grid-column: 3;
+    width: auto;
+    max-width: none;
+    padding: 0;
+    border-left: 0;
+    background: var(--core-surface);
+    box-shadow: none;
+  }
+}
+
+/* v227: Tasks use one calm top bar. The heading, search and account action
+   must share the available width without turning the header into a card. */
+.simple-app[data-design="soft-tech"][data-module="tasks"] .simple-main {
+  padding: 32px clamp(28px, 4vw, 64px) 52px;
+}
+
+.simple-app[data-design="soft-tech"][data-module="tasks"] .simple-main > .simple-main-head {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) auto;
+  align-items: start;
+  gap: 24px;
+  min-height: 0;
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.simple-app[data-design="soft-tech"][data-module="tasks"] .simple-main-head h1 {
+  font-size: clamp(32px, 2.4vw, 40px);
+  line-height: 1.05;
+}
+
+.simple-app[data-design="soft-tech"][data-module="tasks"] .simple-main-head p {
+  max-width: 640px;
+  margin-top: 8px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.simple-app[data-design="soft-tech"][data-module="tasks"] .simple-head-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  width: auto;
+  padding-top: 1px;
+}
+
+.simple-app[data-design="soft-tech"][data-module="tasks"] .simple-search-shell {
+  width: clamp(240px, 22vw, 320px);
+  min-width: 0;
+}
+
+.simple-app[data-design="soft-tech"][data-module="tasks"] #simpleSignOutButton,
+.simple-app[data-design="soft-tech"][data-module="tasks"] #simpleAuthButton {
+  flex: 0 0 auto;
+  min-width: 76px;
+  padding-inline: 16px;
+}
+
+.simple-app[data-design="soft-tech"] .simple-account > div:not(.simple-appearance-menu) {
+  overflow: hidden;
+}
+
+.simple-app[data-design="soft-tech"] .simple-sync-toggle {
+  width: 100%;
+}
+
+@media (max-width: 1180px) and (min-width: 781px) {
+  .simple-app[data-design="soft-tech"][data-module="tasks"] .simple-main > .simple-main-head {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="tasks"] .simple-head-actions {
+    justify-content: flex-start;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="tasks"] .simple-search-shell {
+    width: min(100%, 360px);
+  }
+}
+
+@media (max-width: 780px) {
+  .simple-app[data-design="soft-tech"][data-module="tasks"] .simple-main {
+    padding: 20px 16px 84px;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="tasks"] .simple-head-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    width: 100%;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="tasks"] .simple-search-shell {
+    width: 100%;
+  }
+}
+
+/* v225: one calm document system for the Notes index and editor. */
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-row[data-simple-object="note"] {
+  min-height: 94px;
+  padding: 14px 14px;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-row[data-simple-object="note"]::before {
+  display: none;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-row[data-simple-object="note"].active {
+  background: var(--core-selected);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--core-blue) 34%, transparent);
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-note-index-copy {
+  gap: 8px;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-note-index-copy > span {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-note-preview,
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-note-list-label {
+  font-size: 12px !important;
+  line-height: 1.4 !important;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-note-list-label {
+  margin-top: 2px !important;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-detail {
+  background: var(--core-canvas);
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-detail-card.simple-note-editor {
+  grid-template-rows: auto auto auto minmax(280px, 1fr) auto;
+  width: min(100%, 860px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: 26px clamp(28px, 4vw, 56px) 34px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-note-editor-bar {
+  grid-template-columns: minmax(160px, 1fr) auto 32px 32px;
+  gap: 8px;
+  min-height: 38px;
+  padding-bottom: 12px;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-note-path {
+  gap: 8px;
+  font-size: 12px;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-note-path > span {
+  color: var(--core-muted);
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-note-path select {
+  min-height: 32px;
+  max-width: 180px;
+  padding: 5px 28px 5px 9px;
+  border: 1px solid var(--core-line);
+  border-radius: 7px;
+  background: var(--core-control);
+  color: var(--core-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-save-hint {
+  color: var(--core-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-detail-menu-button,
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-detail-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"][data-color-mode="dark"] .simple-detail-menu-button img {
+  filter: invert(1);
+  opacity: .78;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"][data-color-mode="dark"] .simple-notes-folder-menu-button img,
+.simple-app[data-design="soft-tech"][data-module="notes"][data-color-mode="dark"] .simple-list-editor-menu .simple-list-choice-row img {
+  filter: invert(1);
+  opacity: .82;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-note-title {
+  min-height: 54px !important;
+  max-height: 96px;
+  margin: 24px 0 18px;
+  padding: 0 !important;
+  color: var(--core-text);
+  font-size: clamp(26px, 2.4vw, 34px) !important;
+  font-weight: 720 !important;
+  line-height: 1.18;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-note-formatbar {
+  min-height: 42px;
+  padding: 5px 0;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-detail-card textarea.simple-note-body {
+  min-height: 280px;
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--core-line);
+  border-radius: 8px;
+  background: var(--core-control);
+  color: var(--core-text);
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-detail-card textarea.simple-note-body:hover {
+  border-color: color-mix(in srgb, var(--core-muted) 48%, var(--core-line));
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-detail-card textarea.simple-note-body:focus {
+  border-color: color-mix(in srgb, var(--core-blue) 72%, var(--core-line));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--core-blue) 12%, transparent);
+  outline: 0;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-note-tags {
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 12px;
+  min-height: 48px;
+  padding-top: 12px;
+  color: var(--core-muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-note-tags input {
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--core-line);
+  border-radius: 7px;
+  background: var(--core-control);
+  color: var(--core-text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"][data-color-mode="dark"] {
+  --core-bg: #141922;
+  --core-surface: #191f2a;
+  --core-line: #2b3442;
+  --core-text: #f2f5fa;
+  --core-muted: #9aa6b8;
+  --core-blue: #79a7ff;
+  --core-blue-soft: #203150;
+  --core-canvas: #141922;
+  --core-rail: #10151d;
+  --core-sidebar: #171d27;
+  --core-hover: #202938;
+  --core-selected: #213657;
+  --core-selected-text: #dce8ff;
+  --core-control: #1b2330;
+  --core-control-hover: #242e3d;
+}
+
+@media (max-width: 899px) {
+  .simple-app[data-design="soft-tech"][data-module="notes"],
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-main,
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-main-head {
+    color: var(--core-text);
+    background: var(--core-canvas);
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-main-head h1 {
+    color: var(--core-text);
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-main-head p {
+    color: var(--core-muted);
+  }
+}
+
+/* v222: Notes is a stable library + document workspace; folders live in the library. */
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-notes-folder-toolbar {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 32px;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--core-line);
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-notes-folder-scroll {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 1px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.simple-app[data-design="soft-tech"][data-module="notes"] .simple-notes-folder-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.simple-notes-folder-actions {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.simple-notes-folder-filter,
+.simple-notes-folder-menu-button,
+.simple-notes-folder-add {
+  min-height: 30px;
+  border: 1px solid var(--core-line);
+  border-radius: 8px;
+  color: var(--core-muted);
+  background: var(--core-control);
+}
+
+.simple-notes-folder-filter {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+
+.simple-notes-folder-filter strong {
+  color: var(--core-muted);
+  font-size: 10px;
+}
+
+.simple-notes-folder-filter.active {
+  color: var(--core-text);
+  border-color: var(--core-blue);
+  background: var(--core-selected);
+}
+
+.simple-notes-folder-menu-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  min-height: 30px;
+  padding: 0;
+  border: 1px solid var(--core-line);
+  border-radius: 8px;
+}
+
+.simple-notes-folder-menu-button img {
+  width: 13px;
+  height: 13px;
+}
+
+.simple-notes-folder-add {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  padding: 0;
+  color: var(--core-text);
+  font-size: 18px;
+}
+
+.simple-notes-folder-actions .simple-list-menu {
+  top: calc(100% + 6px);
+  right: 0;
+  left: auto;
+  z-index: 20;
+  min-width: 220px;
+}
+
+.simple-notes-folder-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  min-width: 240px;
+}
+
+.simple-notes-folder-form input,
+.simple-notes-folder-form button {
+  min-height: 32px;
+  border: 1px solid var(--core-line);
+  border-radius: 7px;
+  color: var(--core-text);
+  background: var(--core-control);
+}
+
+.simple-notes-folder-create {
+  margin: -4px 0 12px;
+}
+
+@media (min-width: 900px) {
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-main {
+    min-width: 0;
+    padding: 24px 20px 36px;
+  }
+
+  .simple-app[data-design="soft-tech"][data-module="notes"] .simple-detail-card.simple-note-editor {
+    padding-inline: clamp(28px, 4vw, 56px);
   }
 }

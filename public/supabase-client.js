@@ -44,6 +44,21 @@ export async function getAuthSession() {
   return data.session || null;
 }
 
+export async function savePushSubscription(subscription) {
+  const auth = await getSignedInClient();
+  if (!auth || !subscription?.endpoint) return { available: false };
+  const payload = typeof subscription.toJSON === "function" ? subscription.toJSON() : subscription;
+  const { error } = await auth.supabase.from("push_subscriptions").upsert({
+    user_id: auth.userId,
+    endpoint: payload.endpoint,
+    subscription: payload,
+    user_agent: navigator.userAgent,
+    updated_at: new Date().toISOString()
+  }, { onConflict: "user_id,endpoint" });
+  if (error) throw error;
+  return { available: true };
+}
+
 export async function signInWithGithub() {
   const supabase = await getSupabaseClient();
   if (!supabase) throw new Error("Supabase is not configured");

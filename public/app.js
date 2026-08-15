@@ -5,10 +5,11 @@ import {
   loadCloudState,
   onAuthStateChange,
   saveCloudNotes,
+  savePushSubscription,
   saveCloudState,
   signInWithGithub,
   signOut
-} from "./supabase-client.js?v=129";
+} from "./supabase-client.js?v=217";
 import {
   createBackupPayload,
   createTaskRecord,
@@ -166,6 +167,7 @@ const seedState = {
     appearanceMode: "system",
     appearanceTheme: "sky",
     appearanceFont: "clean",
+    notificationTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     shortcuts: { ...defaultShortcuts }
   },
   lists: structuredClone(defaultTaskLists),
@@ -459,6 +461,7 @@ function timeBlock(start, end, title, nextAction, status = "draft") {
     status,
     recurrence: "none",
     reminderMinutes: null,
+    endReminderMinutes: null,
     createdAt: new Date().toISOString()
   };
 }
@@ -525,6 +528,9 @@ function normalizeState(nextState) {
   if (!["sky", "indigo", "clay"].includes(nextState.settings.appearanceTheme)) nextState.settings.appearanceTheme = "sky";
   if (!["system", "light", "dark"].includes(nextState.settings.appearanceMode)) nextState.settings.appearanceMode = "system";
   if (!["clean", "soft", "editorial"].includes(nextState.settings.appearanceFont)) nextState.settings.appearanceFont = "clean";
+  if (typeof nextState.settings.notificationTimeZone !== "string" || !nextState.settings.notificationTimeZone) {
+    nextState.settings.notificationTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  }
   if (nextState.settings.activeView === "overview") nextState.settings.activeView = "projects";
   if (!["inbox", "today", "week", "all", "projects", "board", "focus", "habits", "notes", "log", "done"].includes(nextState.settings.activeView)) {
     nextState.settings.activeView = "today";
@@ -597,6 +603,12 @@ function normalizeState(nextState) {
       : Number(block.reminderMinutes);
     block.reminderMinutes = Number.isFinite(reminderMinutes) && reminderMinutes >= 0 && reminderMinutes <= 10080
       ? reminderMinutes
+      : null;
+    const endReminderMinutes = block.endReminderMinutes === null || block.endReminderMinutes === undefined || block.endReminderMinutes === ""
+      ? null
+      : Number(block.endReminderMinutes);
+    block.endReminderMinutes = Number.isFinite(endReminderMinutes) && endReminderMinutes >= 0 && endReminderMinutes <= 1440
+      ? endReminderMinutes
       : null;
   });
   nextState.weeklyPlan = { ...seedState.weeklyPlan, ...(nextState.weeklyPlan || {}) };
@@ -1805,6 +1817,19 @@ function renderReminderOptions(value) {
   ].map(([option, label]) => `<option value="${option}" ${current === option ? "selected" : ""}>${label}</option>`).join("");
 }
 
+function renderEndReminderOptions(value) {
+  const current = value === null || value === undefined || value === "" ? "" : String(Number(value));
+  return [
+    ["", "Без напоминания"],
+    ["0", "В момент завершения"],
+    ["5", "За 5 минут"],
+    ["10", "За 10 минут"],
+    ["15", "За 15 минут"],
+    ["30", "За 30 минут"],
+    ["60", "За 1 час"]
+  ].map(([option, label]) => `<option value="${option}" ${current === option ? "selected" : ""}>${label}</option>`).join("");
+}
+
 function renderOptionChips(field, options, current, labels = {}) {
   return options.map((value) => `<button
     class="option-chip ${String(current) === String(value) ? "active" : ""}"
@@ -2191,7 +2216,13 @@ function visibleNotes() {
     : folderId
       ? state.notes.filter((item) => item.folderId === folderId)
       : state.notes;
-  return [...notes].sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")));
+  return [...notes].sort((a, b) => {
+    const updatedOrder = String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || ""));
+    if (updatedOrder) return updatedOrder;
+    const createdOrder = String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+    if (createdOrder) return createdOrder;
+    return String(a.id || "").localeCompare(String(b.id || ""));
+  });
 }
 
 function createNoteFolder(title) {
@@ -2342,35 +2373,7 @@ function renderSimpleNav(module, counts) {
   }
 
   if (module === "notes") {
-    const unfiledCount = state.notes.filter((item) => !item.folderId).length;
-    return `<section>
-      <span class="simple-nav-label">Библиотека</span>
-      <button type="button" class="simple-system-item ${!state.ui?.selectedNoteFolderId ? "active" : ""}" data-note-folder=""><img src="/icons/notebook-pen.svg" alt="" /><span>Все заметки</span><strong>${counts.notes}</strong></button>
-      <button type="button" class="simple-system-item ${state.ui?.selectedNoteFolderId === "unfiled" ? "active" : ""}" data-note-folder="unfiled"><img src="/icons/list-todo.svg" alt="" /><span>Без списка</span><strong>${unfiledCount}</strong></button>
-    </section>
-    <section>
-      <div class="simple-nav-section-head">
-        <span class="simple-nav-label">Списки заметок</span>
-        <button type="button" class="simple-add-list-button" data-note-folder-action="create" title="Создать список заметок" aria-label="Создать список заметок">+</button>
-      </div>
-      ${state.ui?.creatingNoteFolder ? `<form class="simple-list-form" id="noteFolderCreateForm"><input name="title" type="text" placeholder="Новый список" aria-label="Название нового списка заметок" autofocus /><button type="submit" aria-label="Создать список">✓</button><button type="button" data-note-folder-action="cancel-create" aria-label="Отменить создание">×</button></form>` : ""}
-      ${noteFolders().map((folder) => {
-        const count = state.notes.filter((item) => item.folderId === folder.id).length;
-        if (state.ui?.renamingNoteFolderId === folder.id) {
-          return `<form class="simple-list-form" data-note-folder-id="${escapeHtml(folder.id)}" data-note-folder-form="rename"><input name="title" value="${escapeHtml(folder.title)}" autofocus /><button type="submit">OK</button><button type="button" data-note-folder-action="cancel-rename">×</button></form>`;
-        }
-        return `<div class="simple-list-row ${state.ui?.selectedNoteFolderId === folder.id ? "active" : ""} ${state.ui?.noteFolderMenuId === folder.id ? "menu-open" : ""}" data-note-folder-id="${escapeHtml(folder.id)}">
-          <button type="button" data-note-folder="${escapeHtml(folder.id)}"><span class="simple-list-token ${escapeHtml(folder.tone)}"><img src="/icons/${escapeHtml(folder.icon)}.svg" alt="" /></span><span class="simple-list-title">${escapeHtml(folder.title)}</span><strong>${count}</strong></button>
-          <button type="button" class="simple-list-action" data-note-folder-action="menu" aria-label="Действия с папкой ${escapeHtml(folder.title)}"><img src="/icons/ellipsis.svg" alt="" /></button>
-          ${state.ui?.noteFolderMenuId === folder.id ? `<div class="simple-list-menu simple-list-editor-menu">
-            <button type="button" data-note-folder-action="rename">Переименовать</button>
-            <span>Иконка</span><div class="simple-list-choice-row">${listIcons.map((iconName) => `<button type="button" class="${folder.icon === iconName ? "selected" : ""}" data-note-folder-action="set-icon" data-folder-icon="${escapeHtml(iconName)}" aria-label="${escapeHtml(iconName)}"><img src="/icons/${escapeHtml(iconName)}.svg" alt="" /></button>`).join("")}</div>
-            <span>Цвет</span><div class="simple-list-choice-row">${listTones.map((tone) => `<button type="button" class="${folder.tone === tone ? "selected" : ""}" data-note-folder-action="set-tone" data-folder-tone="${tone}" aria-label="${tone}"><i class="simple-tone-dot ${tone}"></i></button>`).join("")}</div>
-            <button type="button" class="danger-text" data-note-folder-action="delete">Удалить</button>
-          </div>` : ""}
-        </div>`;
-      }).join("")}
-    </section>`;
+    return "";
   }
 
   const moduleNav = {
@@ -2407,11 +2410,11 @@ function renderSimpleApp() {
 
   const syncStatusLabels = {
     conflict: "локально сохранено · конфликт",
-    error: "сохранено на устройстве",
+    error: "сохранено",
     syncing: "сохраняю…",
     synced: "синхронизировано",
-    private: "сохранено на устройстве",
-    local: "сохранено на устройстве"
+    private: "сохранено",
+    local: "сохранено"
   };
   document.querySelector("#simpleSyncStatus").textContent = syncStatusLabels[cloudSync.status] || (cloudSync.session ? "синхронизировано" : "только устройство");
   document.querySelectorAll("#simpleSyncToggle, #simpleMobileSyncToggle").forEach((syncToggle) => {
@@ -2897,6 +2900,42 @@ async function requestReminderPermission() {
   return Notification.permission;
 }
 
+function decodeVapidKey(value) {
+  const padding = "=".repeat((4 - value.length % 4) % 4);
+  const raw = atob((value + padding).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(raw, (character) => character.charCodeAt(0));
+}
+
+async function enablePushNotifications() {
+  const permission = await requestReminderPermission();
+  if (permission !== "granted") return permission;
+  state.settings.notificationTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "foreground-only";
+  const config = await getAppConfig();
+  const publicKey = String(config.notifications?.vapidPublicKey || "").trim();
+  if (!publicKey) return "foreground-only";
+  const registration = await navigator.serviceWorker.ready;
+  const existing = await registration.pushManager.getSubscription();
+  const subscription = existing || await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: decodeVapidKey(publicKey)
+  });
+  await savePushSubscription(subscription);
+  return "push";
+}
+
+async function sendTestNotification() {
+  const mode = await enablePushNotifications();
+  if (mode === "denied" || mode === "unsupported") return mode;
+  await deliverSystemReminder({
+    key: `daily-os-test-${Date.now()}`,
+    title: "Daily OS · уведомления работают",
+    body: mode === "push" ? "Фоновая push-подписка активна." : "Уведомления работают, пока Daily OS активен.",
+    url: "/?view=calendar"
+  });
+  return mode;
+}
+
 function notificationPermissionLabel() {
   if (!("Notification" in window)) return "Системные уведомления не поддерживаются этим браузером.";
   if (Notification.permission === "granted") return "Системные уведомления включены.";
@@ -2924,17 +2963,27 @@ function scheduleSystemReminders() {
   };
 
   state.dailyPlan.timeBlocks.forEach((block) => {
-    if (block.reminderMinutes === null || block.reminderMinutes === undefined || block.reminderMinutes === "") return;
     calendarBlockOccurrenceDates(block, dates).forEach((date) => {
       const startsAt = new Date(`${date}T${block.start}:00`).getTime();
-      const notifyAt = startsAt - Number(block.reminderMinutes || 0) * 60 * 1000;
-      schedule({
-        key: `daily-os-block-${block.id}-${date}-${block.start}`,
-        title: block.title,
-        body: `Блок начнётся в ${block.start}`,
-        notifyAt,
-        url: "/"
-      });
+      const endsAt = new Date(`${date}T${block.end}:00`).getTime();
+      if (block.reminderMinutes !== null && block.reminderMinutes !== undefined && block.reminderMinutes !== "") {
+        schedule({
+          key: `daily-os-block-start-${block.id}-${date}-${block.start}`,
+          title: block.title,
+          body: Number(block.reminderMinutes) === 0 ? `Пора начать · до ${block.end}` : `Начало в ${block.start} · до ${block.end}`,
+          notifyAt: startsAt - Number(block.reminderMinutes || 0) * 60 * 1000,
+          url: `/?view=calendar&block=${encodeURIComponent(block.id)}`
+        });
+      }
+      if (block.endReminderMinutes !== null && block.endReminderMinutes !== undefined && block.endReminderMinutes !== "") {
+        schedule({
+          key: `daily-os-block-end-${block.id}-${date}-${block.end}`,
+          title: block.title,
+          body: Number(block.endReminderMinutes) === 0 ? "Блок завершён · зафиксируй результат" : `Завершение в ${block.end}`,
+          notifyAt: endsAt - Number(block.endReminderMinutes || 0) * 60 * 1000,
+          url: `/?view=calendar&block=${encodeURIComponent(block.id)}`
+        });
+      }
     });
   });
 
@@ -3467,7 +3516,37 @@ function renderSimpleNotesLibrary(notes) {
   const body = notes.length
     ? notes.map(renderSimpleNoteRow).join("")
     : `<div class="simple-empty simple-notes-empty"><strong>Здесь пока тихо</strong><span>Создай первую заметку в этой папке — она сразу откроется справа.</span></div>`;
+  const unfiledCount = state.notes.filter((item) => !item.folderId).length;
+  const folderControls = noteFolders().map((folder) => {
+    const count = state.notes.filter((item) => item.folderId === folder.id).length;
+    if (state.ui?.renamingNoteFolderId === folder.id) {
+      return `<form class="simple-notes-folder-form" data-note-folder-id="${escapeHtml(folder.id)}" data-note-folder-form="rename"><input name="title" value="${escapeHtml(folder.title)}" aria-label="Новое название списка" autofocus /><button type="submit">OK</button><button type="button" data-note-folder-action="cancel-rename" aria-label="Отменить">×</button></form>`;
+    }
+    return `<button type="button" class="simple-notes-folder-filter ${state.ui?.selectedNoteFolderId === folder.id ? "active" : ""}" data-note-folder-filter data-note-folder="${escapeHtml(folder.id)}"><span class="simple-list-token ${escapeHtml(folder.tone)}"><img src="/icons/${escapeHtml(folder.icon)}.svg" alt="" /></span><span>${escapeHtml(folder.title)}</span><strong>${count}</strong></button>`;
+  }).join("");
+  const selectedFolderItem = noteFolders().find((folder) => folder.id === selectedFolder);
+  const selectedFolderActions = selectedFolderItem
+    ? `<div class="simple-notes-folder-actions ${state.ui?.noteFolderMenuId === selectedFolderItem.id ? "menu-open" : ""}" data-note-folder-id="${escapeHtml(selectedFolderItem.id)}">
+      <button type="button" class="simple-notes-folder-menu-button" data-note-folder-action="menu" aria-label="Действия с папкой ${escapeHtml(selectedFolderItem.title)}"><img src="/icons/ellipsis.svg" alt="" /></button>
+      ${state.ui?.noteFolderMenuId === selectedFolderItem.id ? `<div class="simple-list-menu simple-list-editor-menu">
+        <button type="button" data-note-folder-action="rename">Переименовать</button>
+        <span>Иконка</span><div class="simple-list-choice-row">${listIcons.map((iconName) => `<button type="button" class="${selectedFolderItem.icon === iconName ? "selected" : ""}" data-note-folder-action="set-icon" data-folder-icon="${escapeHtml(iconName)}" aria-label="${escapeHtml(iconName)}"><img src="/icons/${escapeHtml(iconName)}.svg" alt="" /></button>`).join("")}</div>
+        <span>Цвет</span><div class="simple-list-choice-row">${listTones.map((tone) => `<button type="button" class="${selectedFolderItem.tone === tone ? "selected" : ""}" data-note-folder-action="set-tone" data-folder-tone="${tone}" aria-label="${tone}"><i class="simple-tone-dot ${tone}"></i></button>`).join("")}</div>
+        <button type="button" class="danger-text" data-note-folder-action="delete">Удалить</button>
+      </div>` : ""}
+    </div>`
+    : "";
   return `<section class="simple-notes-library" aria-label="Библиотека заметок">
+    <div class="simple-notes-folder-toolbar" aria-label="Списки заметок">
+      <div class="simple-notes-folder-scroll">
+        <button type="button" class="simple-notes-folder-filter ${!selectedFolder ? "active" : ""}" data-note-folder-filter data-note-folder=""><span>Все</span><strong>${state.notes.length}</strong></button>
+        <button type="button" class="simple-notes-folder-filter ${selectedFolder === "unfiled" ? "active" : ""}" data-note-folder-filter data-note-folder="unfiled"><span>Без списка</span><strong>${unfiledCount}</strong></button>
+        ${folderControls}
+      </div>
+      ${selectedFolderActions}
+      <button type="button" class="simple-notes-folder-add" data-note-folder-action="create" title="Создать список заметок" aria-label="Создать список заметок">+</button>
+    </div>
+    ${state.ui?.creatingNoteFolder ? `<form class="simple-notes-folder-form simple-notes-folder-create" id="noteFolderCreateForm"><input name="title" type="text" placeholder="Новый список" aria-label="Название нового списка заметок" autofocus /><button type="submit" aria-label="Создать список">✓</button><button type="button" data-note-folder-action="cancel-create" aria-label="Отменить создание">×</button></form>` : ""}
     <header class="simple-notes-library-head"><div><span>${escapeHtml(folderTitle)}</span><small>Последние изменения</small></div><strong>${notes.length}</strong></header>
     <div class="simple-notes-index">${body}</div>
   </section>`;
@@ -3641,10 +3720,11 @@ function renderSimpleDetail(meta) {
           <option value="weekdays" ${calendarBlock.recurrence === "weekdays" ? "selected" : ""}>По будням</option>
           <option value="weekly" ${calendarBlock.recurrence === "weekly" ? "selected" : ""}>Каждую неделю</option>
         </select></label>
-        <label><span>Напоминание</span><select data-calendar-block-field="reminderMinutes">${renderReminderOptions(calendarBlock.reminderMinutes)}</select></label>
+        <label><span>Перед началом</span><select data-calendar-block-field="reminderMinutes">${renderReminderOptions(calendarBlock.reminderMinutes)}</select></label>
       </div>
+      <label><span>Перед завершением</span><select data-calendar-block-field="endReminderMinutes">${renderEndReminderOptions(calendarBlock.endReminderMinutes)}</select></label>
       <label><span>Комментарий</span><textarea data-calendar-block-field="nextAction" placeholder="Что должно произойти в этом блоке">${escapeHtml(calendarBlock.nextAction || "")}</textarea></label>
-      ${calendarBlock.reminderMinutes !== null && calendarBlock.reminderMinutes !== undefined ? `<p class="calendar-notification-state">${escapeHtml(notificationPermissionLabel())}</p>` : ""}
+      <div class="calendar-notification-controls"><p class="calendar-notification-state">${escapeHtml(notificationPermissionLabel())}</p><div><button type="button" data-notification-action="enable">Включить системные</button><button type="button" data-notification-action="test">Проверить</button></div></div>
       <p class="calendar-block-hint">Блок сохраняется автоматически. Диапазон дат создаёт одинаковый интервал ${escapeHtml(calendarBlock.start)}–${escapeHtml(calendarBlock.end)} в каждом выбранном дне.</p>
       <button type="button" class="danger-text calendar-block-delete" data-simple-action="delete-calendar-block">Удалить блок</button>
     </section>`;
@@ -3729,12 +3809,12 @@ function renderSimpleDetail(meta) {
     const stats = noteDocumentStats(noteBody(noteItem));
     return `<section class="simple-detail-card simple-note-editor" data-note-id="${escapeHtml(noteItem.id)}">
       <div class="simple-note-editor-bar">
-        <div class="simple-note-path"><span>Заметки</span><b>/</b><select data-note-field="folderId" aria-label="Список заметки" title="Переместить в список"><option value="">Без списка</option>${noteFolders().map(({ id, title }) => `<option value="${escapeHtml(id)}" ${noteItem.folderId === id ? "selected" : ""}>${escapeHtml(title)}</option>`).join("")}</select></div>
+        <label class="simple-note-path"><span>Список</span><select data-note-field="folderId" aria-label="Список заметки" title="Переместить в список"><option value="">Без списка</option>${noteFolders().map(({ id, title }) => `<option value="${escapeHtml(id)}" ${noteItem.folderId === id ? "selected" : ""}>${escapeHtml(title)}</option>`).join("")}</select></label>
         <span class="simple-save-hint" data-note-save-status>Сохранено</span>
         <div class="simple-note-menu-wrap"><button type="button" class="simple-detail-menu-button ${state.ui.noteMenuOpen ? "active" : ""}" data-simple-action="note-menu" aria-label="Действия с заметкой"><img src="/icons/ellipsis.svg" alt="" /></button>${state.ui.noteMenuOpen ? `<div class="simple-note-menu" role="menu"><button class="danger-text" type="button" data-simple-action="delete-note">Удалить заметку</button></div>` : ""}</div>
         <button type="button" class="simple-detail-close" data-simple-action="close-detail" aria-label="Закрыть заметку"><img src="/icons/x.svg" alt="" /></button>
       </div>
-      <textarea class="simple-note-title" data-note-field="title" rows="2" placeholder="Без названия">${escapeHtml(noteTitle(noteItem))}</textarea>
+      <textarea class="simple-note-title" data-note-field="title" rows="1" placeholder="Без названия">${escapeHtml(noteTitle(noteItem))}</textarea>
       <div class="simple-note-formatbar" role="toolbar" aria-label="Форматирование заметки">
         <button type="button" data-note-command="heading" title="Заголовок">H2</button>
         <button type="button" data-note-command="bold" title="Жирный текст"><b>B</b></button>
@@ -4156,6 +4236,32 @@ document.addEventListener("click", (event) => {
   saveState();
 }, true);
 
+document.addEventListener("click", async (event) => {
+  const notificationAction = event.target.closest?.("[data-notification-action]");
+  if (!notificationAction || !document.querySelector("#simpleApp")?.contains(notificationAction)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  notificationAction.disabled = true;
+  try {
+    const result = notificationAction.dataset.notificationAction === "test"
+      ? await sendTestNotification()
+      : await enablePushNotifications();
+    const detail = result === "push"
+      ? "Фоновая push-подписка активна."
+      : result === "granted" || result === "foreground-only"
+        ? "Системные уведомления включены; фоновая доставка ожидает серверную настройку."
+        : result === "denied"
+          ? "Разрешение отключено в настройках системы или браузера."
+          : "Системные уведомления недоступны на этом устройстве.";
+    state.assistantActions.unshift(action("Уведомления календаря", detail, result === "denied" ? "needs_review" : "confirmed"));
+    scheduleSystemReminders();
+    saveState();
+  } catch (error) {
+    state.assistantActions.unshift(action("Push-подписка не сохранена", error instanceof Error ? error.message : "Неизвестная ошибка", "needs_review"));
+    saveState();
+  }
+}, true);
+
 function handleTodayWorkbenchClick(target) {
   if (currentSimpleModule() !== "tasks" || state.settings.activeView !== "today") return false;
 
@@ -4326,12 +4432,9 @@ function handleTodayWorkbenchChange(target) {
     const field = calendarBlockField.dataset.calendarBlockField;
     const value = calendarBlockField.value;
     if (["title", "date", "endDate", "start", "end", "nextAction", "recurrence"].includes(field)) block[field] = value;
-    if (field === "reminderMinutes") {
-      block.reminderMinutes = value === "" ? null : Number(value);
-      if (value !== "") requestReminderPermission().then(() => {
-        scheduleSystemReminders();
-        renderSimpleApp();
-      });
+    if (["reminderMinutes", "endReminderMinutes"].includes(field)) {
+      block[field] = value === "" ? null : Number(value);
+      scheduleSystemReminders();
     }
     if (!block.endDate || block.endDate < block.date) block.endDate = block.date;
     if (!block.title.trim()) block.title = "Новый блок";
@@ -4411,6 +4514,49 @@ document.addEventListener("input", (event) => {
 }, true);
 
 document.querySelector("#simpleApp")?.addEventListener("click", async (event) => {
+  const noteFolderFilter = event.target.closest?.("[data-note-folder-filter]");
+  if (noteFolderFilter) {
+    state.ui.selectedNoteFolderId = noteFolderFilter.dataset.noteFolder || "";
+    state.ui.selectedNoteId = null;
+    state.ui.noteFolderMenuId = "";
+    saveState();
+    return;
+  }
+
+  const noteFolderToolbarAction = event.target.closest?.("[data-note-folder-action]");
+  if (noteFolderToolbarAction) {
+    const actionType = noteFolderToolbarAction.dataset.noteFolderAction;
+    const folderRoot = noteFolderToolbarAction.closest("[data-note-folder-id]");
+    if (actionType === "create") {
+      state.ui.creatingNoteFolder = true;
+      state.ui.renamingNoteFolderId = "";
+    }
+    if (actionType === "cancel-create") state.ui.creatingNoteFolder = false;
+    if (actionType === "menu" && folderRoot?.dataset.noteFolderId) {
+      state.ui.noteFolderMenuId = state.ui.noteFolderMenuId === folderRoot.dataset.noteFolderId ? "" : folderRoot.dataset.noteFolderId;
+    }
+    if (actionType === "rename" && folderRoot?.dataset.noteFolderId) {
+      state.ui.renamingNoteFolderId = folderRoot.dataset.noteFolderId;
+      state.ui.creatingNoteFolder = false;
+      state.ui.noteFolderMenuId = "";
+    }
+    if (actionType === "set-icon" && folderRoot?.dataset.noteFolderId && listIcons.includes(noteFolderToolbarAction.dataset.folderIcon)) {
+      const folder = noteFolders().find((item) => item.id === folderRoot.dataset.noteFolderId);
+      if (folder) folder.icon = noteFolderToolbarAction.dataset.folderIcon;
+    }
+    if (actionType === "set-tone" && folderRoot?.dataset.noteFolderId && listTones.includes(noteFolderToolbarAction.dataset.folderTone)) {
+      const folder = noteFolders().find((item) => item.id === folderRoot.dataset.noteFolderId);
+      if (folder) folder.tone = noteFolderToolbarAction.dataset.folderTone;
+    }
+    if (actionType === "cancel-rename") state.ui.renamingNoteFolderId = "";
+    if (actionType === "delete" && folderRoot?.dataset.noteFolderId) {
+      state.ui.pendingDeleteNoteFolderId = folderRoot.dataset.noteFolderId;
+      state.ui.noteFolderMenuId = "";
+    }
+    saveState();
+    return;
+  }
+
   const noteCommand = event.target.closest?.("[data-note-command]");
   if (noteCommand) {
     const noteRoot = noteCommand.closest("[data-note-id]");
@@ -4550,7 +4696,7 @@ document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>
     return;
   }
 
-  const modeButton = event.target.closest("[data-appearance-mode]");
+  const modeButton = event.target.closest("button[data-appearance-mode]");
   if (modeButton) {
     state.settings.appearanceMode = modeButton.dataset.appearanceMode;
     saveState();
@@ -4689,49 +4835,6 @@ document.querySelector("#simpleApp")?.addEventListener("click", async (event) =>
     state.ui.selectedNoteId = null;
     state.ui.listMenuId = "";
     state.ui.taskMenuOpen = false;
-    saveState();
-    return;
-  }
-
-  const noteFolderButton = event.target.closest("[data-note-folder]");
-  if (noteFolderButton) {
-    state.ui.selectedNoteFolderId = noteFolderButton.dataset.noteFolder || "";
-    state.ui.selectedNoteId = null;
-    state.ui.noteFolderMenuId = "";
-    saveState();
-    return;
-  }
-
-  const noteFolderAction = event.target.closest("[data-note-folder-action]");
-  if (noteFolderAction) {
-    const actionType = noteFolderAction.dataset.noteFolderAction;
-    const folderRoot = noteFolderAction.closest("[data-note-folder-id]");
-    if (actionType === "create") {
-      state.ui.creatingNoteFolder = true;
-      state.ui.renamingNoteFolderId = "";
-    }
-    if (actionType === "cancel-create") state.ui.creatingNoteFolder = false;
-    if (actionType === "menu" && folderRoot?.dataset.noteFolderId) {
-      state.ui.noteFolderMenuId = state.ui.noteFolderMenuId === folderRoot.dataset.noteFolderId ? "" : folderRoot.dataset.noteFolderId;
-    }
-    if (actionType === "rename" && folderRoot?.dataset.noteFolderId) {
-      state.ui.renamingNoteFolderId = folderRoot.dataset.noteFolderId;
-      state.ui.creatingNoteFolder = false;
-      state.ui.noteFolderMenuId = "";
-    }
-    if (actionType === "set-icon" && folderRoot?.dataset.noteFolderId && listIcons.includes(noteFolderAction.dataset.folderIcon)) {
-      const folder = noteFolders().find((item) => item.id === folderRoot.dataset.noteFolderId);
-      if (folder) folder.icon = noteFolderAction.dataset.folderIcon;
-    }
-    if (actionType === "set-tone" && folderRoot?.dataset.noteFolderId && listTones.includes(noteFolderAction.dataset.folderTone)) {
-      const folder = noteFolders().find((item) => item.id === folderRoot.dataset.noteFolderId);
-      if (folder) folder.tone = noteFolderAction.dataset.folderTone;
-    }
-    if (actionType === "cancel-rename") state.ui.renamingNoteFolderId = "";
-    if (actionType === "delete" && folderRoot?.dataset.noteFolderId) {
-      state.ui.pendingDeleteNoteFolderId = folderRoot.dataset.noteFolderId;
-      state.ui.noteFolderMenuId = "";
-    }
     saveState();
     return;
   }
@@ -5402,12 +5505,9 @@ document.querySelector("#simpleApp")?.addEventListener("change", (event) => {
     const field = calendarBlockField.dataset.calendarBlockField;
     const value = calendarBlockField.value;
     if (["title", "date", "endDate", "start", "end", "nextAction", "recurrence"].includes(field)) block[field] = value;
-    if (field === "reminderMinutes") {
-      block.reminderMinutes = value === "" ? null : Number(value);
-      if (value !== "") requestReminderPermission().then(() => {
-        scheduleSystemReminders();
-        renderSimpleApp();
-      });
+    if (["reminderMinutes", "endReminderMinutes"].includes(field)) {
+      block[field] = value === "" ? null : Number(value);
+      scheduleSystemReminders();
     }
     if (!block.endDate || block.endDate < block.date) block.endDate = block.date;
     if (!block.title.trim()) block.title = "Новый блок";
@@ -6239,6 +6339,16 @@ window.addEventListener("storage", (event) => {
 window.matchMedia?.("(prefers-color-scheme: dark)")?.addEventListener?.("change", () => {
   if (state.settings.appearanceMode === "system") renderSimpleApp();
 });
+
+const launchParams = new URLSearchParams(window.location.search);
+if (launchParams.get("view") === "calendar") {
+  state.ui.simpleModule = "calendar";
+  state.settings.activeView = "today";
+  const blockId = launchParams.get("block");
+  if (blockId && state.dailyPlan.timeBlocks.some((block) => block.id === blockId)) {
+    state.ui.selectedCalendarBlockId = blockId;
+  }
+}
 
 render();
 initAuth();

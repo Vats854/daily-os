@@ -12,6 +12,9 @@ export default function handler(_request, response) {
     },
     auth: {
       provider: "github"
+    },
+    notifications: {
+      vapidPublicKey: process.env.VAPID_PUBLIC_KEY || ""
     }
   });
 }

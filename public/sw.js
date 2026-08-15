@@ -1,4 +1,4 @@
-const CACHE_NAME = "second-brain-command-center-v215";
+const CACHE_NAME = "second-brain-command-center-v228";
 const ASSETS = [
   "/",
   "/index.html",
@@ -65,4 +65,20 @@ self.addEventListener("notificationclick", (event) => {
       await self.clients.openWindow(targetUrl);
     })
   );
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data?.json() || {};
+  } catch {
+    payload = { body: event.data?.text() || "Пора проверить календарь." };
+  }
+  event.waitUntil(self.registration.showNotification(payload.title || "Daily OS", {
+    body: payload.body || "Пора проверить календарь.",
+    tag: payload.tag || "daily-os-calendar",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    data: { url: payload.url || "/?view=calendar" }
+  }));
 });

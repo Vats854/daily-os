@@ -6,3 +6,5 @@
 .codex/
 career-output/
 node_modules/
+.vercel
+.env*
